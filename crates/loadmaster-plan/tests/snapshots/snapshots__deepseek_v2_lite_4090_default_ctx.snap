@@ -1,0 +1,23 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(DSV2_LITE, FakeHw::rtx_4090(), None, None)"
+---
+WEIGHT   DeepSeek V2 Lite Chat · deepseek2 · Q4_K_M · 27 layers · MoE
+  weights             10.46 GiB   27/27 layers + output head 0.16 GiB; token embeddings 0.11 GiB stay on CPU
+  KV cache             8.96 GiB   f16: 27 layers x 163840 cells x (K 576 + V 512) (MLA latent) x 2 B
+  compute buffer       0.32 GiB   n_ubatch 512 x (n_embd 2048 + n_vocab 102400) x 4 B + 128 MiB, flash attention
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
+  ------------------------------
+  GPU total           20.53 GiB   of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (NVML free; 0.49 GiB held by other processes)
+  weights on CPU       0.11 GiB   token embeddings
+  host total           0.11 GiB   of 48.00 GiB available host memory
+
+BALANCE  all 27 layers and the output head on GPU
+  ctx 163840: not given; the training context 163840 fits on GPU with f16 KV
+  KV cache f16: f16 fits with every layer on GPU
+  flash attention on: required for a quantised V cache and smaller compute buffers
+  tried:
+    fits all layers on GPU, f16 KV                          GPU   20.53 GiB  host    0.11 GiB
+
+COMMAND
+  llama-server -m fixtures/gguf/deepseek-v2-lite/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf -c 163840 -ngl 28 -fa on -np 1 --jinja

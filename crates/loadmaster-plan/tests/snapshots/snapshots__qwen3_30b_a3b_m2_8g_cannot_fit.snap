@@ -1,0 +1,22 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(QWEN3_30B_A3B, FakeHw::m2_8g(), Some(8192), None)"
+---
+Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE  ·  ctx 8192
+does not fit: 11.35 GiB short on host memory (even with every layer on the CPU)
+cheapest fixes:
+  - use a quant at least 11.35 GiB smaller than Q4_K_M (16.12 GiB)
+
+WEIGHT   closest configuration
+  weights              0.77 GiB   48/48 layers (experts of first 48 layers on CPU, 15.19 GiB) + output head 0.24 GiB; token embeddings 0.16 GiB stay on CPU
+  KV cache             0.40 GiB   q8_0: 48 layers x 8192 cells x (K 512 + V 512) x 34/32 B
+  compute buffer       0.42 GiB   n_ubatch 512 x (n_embd 2048 + n_vocab 151936) x 4 B + 128 MiB, flash attention
+  headroom             1.50 GiB   macOS and display on unified memory (default 1536 MiB)
+  weights on CPU      15.35 GiB   token embeddings + routed experts
+
+BALANCE  tried:
+    over all layers on GPU, f16 KV                          GPU   18.63 GiB  host    0.16 GiB
+    over all layers on GPU, q8_0 KV                         GPU   18.28 GiB  host    0.16 GiB
+    over all layers on GPU, q4_0 KV                         GPU   18.09 GiB  host    0.16 GiB
+    over experts of first 48/48 layers on CPU, q8_0 KV      GPU    3.09 GiB  host   15.35 GiB
+    over 0/48 layers on GPU, q8_0 KV                        GPU    1.92 GiB  host   16.52 GiB

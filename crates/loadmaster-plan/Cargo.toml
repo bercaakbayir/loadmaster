@@ -11,6 +11,13 @@ authors.workspace = true
 [dependencies]
 loadmaster-model.workspace = true
 loadmaster-hw.workspace = true
+serde.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+proptest.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,25 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(QWEN3_8B, FakeHw::rtx_3060_12g(), Some(65536), None)"
+---
+WEIGHT   Qwen3 8B · qwen3 · Q4_K_M · 36 layers
+  weights              4.59 GiB   36/36 layers + output head 0.48 GiB; token embeddings 0.33 GiB stay on CPU
+  KV cache             4.78 GiB   q8_0: 36 layers x 65536 cells x (K 1024 + V 1024) x 34/32 B
+  compute buffer       0.42 GiB   n_ubatch 512 x (n_embd 4096 + n_vocab 151936) x 4 B + 128 MiB, flash attention
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
+  ------------------------------
+  GPU total           10.57 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  weights on CPU       0.33 GiB   token embeddings
+  host total           0.33 GiB   of 24.00 GiB available host memory
+
+BALANCE  all 36 layers and the output head on GPU
+  ctx 65536: requested with --ctx
+  KV cache q8_0: f16 does not fit with every layer on GPU; q8_0 does
+  flash attention on: required for a quantised V cache and smaller compute buffers
+  tried:
+    over all layers on GPU, f16 KV                          GPU   14.79 GiB  host    0.33 GiB
+    fits all layers on GPU, q8_0 KV                         GPU   10.57 GiB  host    0.33 GiB
+  warning: ctx 65536 exceeds the training context 40960; quality degrades without RoPE scaling
+
+COMMAND
+  llama-server -m fixtures/gguf/qwen3-8b/Qwen3-8B-Q4_K_M.gguf -c 65536 -ngl 37 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

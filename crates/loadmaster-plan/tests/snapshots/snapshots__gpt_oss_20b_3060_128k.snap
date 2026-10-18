@@ -1,0 +1,26 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(GPT_OSS_20B, FakeHw::rtx_3060_12g(), Some(131072), None)"
+---
+WEIGHT   Gpt Oss 20b · gpt-oss · MXFP4_MOE · 24 layers · MoE
+  weights              8.72 GiB   24/24 layers (experts of first 5 layers on CPU, 1.97 GiB) + output head 0.57 GiB; token embeddings 0.57 GiB stay on CPU
+  KV cache             1.60 GiB   q8_0: 12 global layers x 131072 cells x (K 512 + V 512) + 12 sliding-window layers x 768 cells (window 128) x (K 512 + V 512), x 34/32 B
+  compute buffer       0.51 GiB   n_ubatch 512 x (n_embd 2880 + n_vocab 201088) x 4 B + 128 MiB, flash attention
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
+  ------------------------------
+  GPU total           11.62 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  weights on CPU       2.55 GiB   token embeddings + routed experts
+  host total           2.55 GiB   of 24.00 GiB available host memory
+
+BALANCE  all 24 layers on GPU, routed experts of the first 5 on CPU
+  ctx 131072: requested with --ctx
+  KV cache q8_0: nothing fits with every layer on GPU; offloading keeps q8_0 because quantising the cache further costs quality, offloading only speed
+  flash attention on: required for a quantised V cache and smaller compute buffers
+  tried:
+    over all layers on GPU, f16 KV                          GPU   15.00 GiB  host    0.57 GiB
+    over all layers on GPU, q8_0 KV                         GPU   13.59 GiB  host    0.57 GiB
+    over all layers on GPU, q4_0 KV                         GPU   12.84 GiB  host    0.57 GiB
+    fits experts of first 5/24 layers on CPU, q8_0 KV       GPU   11.62 GiB  host    2.55 GiB
+
+COMMAND
+  llama-server -m fixtures/gguf/gpt-oss-20b/gpt-oss-20b-mxfp4.gguf -c 131072 -ngl 25 --n-cpu-moe 5 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

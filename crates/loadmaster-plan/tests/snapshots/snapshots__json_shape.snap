@@ -1,0 +1,96 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "serde_json::to_string_pretty(&p).unwrap()"
+---
+{
+  "model": {
+    "path": "fixtures/gguf/qwen3-8b/Qwen3-8B-Q4_K_M.gguf",
+    "name": "Qwen3 8B",
+    "arch": "qwen3",
+    "quant": "Q4_K_M",
+    "n_layer": 36,
+    "n_ctx_train": 40960,
+    "weight_bytes": 5274861568,
+    "mmproj": null,
+    "moe": false,
+    "chat_template_blake3": "b726b61131c363d8971280697b6649f1431afe59fc70f380dfa6539b1b3b1ebf"
+  },
+  "gpu": {
+    "index": 0,
+    "name": "NVIDIA GeForce RTX 4090",
+    "vendor": "nvidia",
+    "memory": "dedicated",
+    "total_bytes": 25757220864,
+    "usable_bytes": 25232932864,
+    "usable_basis": "NVML free"
+  },
+  "runtime": "llama_cpp",
+  "ctx": 8192,
+  "ctx_reason": "requested with --ctx",
+  "placement": {
+    "n_gpu_layers": 37,
+    "n_cpu_moe": 0
+  },
+  "kv": "f16",
+  "kv_reason": "f16 fits with every layer on GPU",
+  "flash_attn": true,
+  "n_ubatch": 512,
+  "footprint": {
+    "gpu": [
+      {
+        "key": "weights",
+        "bytes": 4924801024,
+        "detail": "36/36 layers + output head 0.48 GiB; token embeddings 0.33 GiB stay on CPU"
+      },
+      {
+        "key": "kv",
+        "bytes": 1207959552,
+        "detail": "f16: 36 layers x 8192 cells x (K 1024 + V 1024) x 2 B"
+      },
+      {
+        "key": "compute",
+        "bytes": 453771264,
+        "detail": "n_ubatch 512 x (n_embd 4096 + n_vocab 151936) x 4 B + 128 MiB, flash attention"
+      },
+      {
+        "key": "headroom",
+        "bytes": 838860800,
+        "detail": "NVIDIA driver and CUDA context (default 800 MiB)"
+      }
+    ],
+    "gpu_bytes": 7425392640,
+    "host": [
+      {
+        "key": "weights_cpu",
+        "bytes": 350060544,
+        "detail": "token embeddings"
+      }
+    ],
+    "host_bytes": 350060544
+  },
+  "budget": 25232932864,
+  "host_budget": 51539607552,
+  "trials": [
+    {
+      "label": "all layers on GPU, f16 KV",
+      "gpu_bytes": 7425392640,
+      "host_bytes": 350060544,
+      "fits": true
+    }
+  ],
+  "warnings": [],
+  "argv": [
+    "llama-server",
+    "-m",
+    "fixtures/gguf/qwen3-8b/Qwen3-8B-Q4_K_M.gguf",
+    "-c",
+    "8192",
+    "-ngl",
+    "37",
+    "-fa",
+    "on",
+    "-np",
+    "1",
+    "--jinja"
+  ]
+}

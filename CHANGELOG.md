@@ -22,3 +22,7 @@ All notable changes to this project are documented here. The format follows
   `cuda` feature on by default), Apple Silicon unified memory with the Metal working-set
   default (estimated until Metal is queried directly), host RAM from sysctl/vm_stat or
   `/proc/meminfo`.
+- `loadmaster-plan`: footprint terms (weights, KV with SWA and MLA, compute buffer, mmproj,
+  headroom) with per-term explanations; f16 → q8_0 → q4_0 KV selection; MoE expert offload
+  and layer offload search; `CannotFit` with the closest miss and two fixes; default-context
+  search; `llama-server` command emitter; `--explain` renderer (ADR 0004).

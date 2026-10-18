@@ -8,8 +8,19 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+default = ["cuda"]
+# NVML is loaded at runtime; without an NVIDIA driver detection reports no NVIDIA GPUs.
+cuda = ["dep:nvml-wrapper"]
+
 [dependencies]
-loadmaster-model.workspace = true
+nvml-wrapper = { workspace = true, optional = true }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

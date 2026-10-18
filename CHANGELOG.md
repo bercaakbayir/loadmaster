@@ -18,3 +18,7 @@ All notable changes to this project are documented here. The format follows
   `mmproj` detection.
 - Architecture table (llama, qwen2/3, qwen3moe, gemma2/3, gpt-oss, deepseek2, and others).
 - `cargo xtask gen-fixtures [--check]`: six header-only model fixtures plus a Gemma 3 mmproj.
+- `loadmaster-hw`: `HwProvider` trait, `FakeHw` presets, NVIDIA via NVML (loaded at runtime,
+  `cuda` feature on by default), Apple Silicon unified memory with the Metal working-set
+  default (estimated until Metal is queried directly), host RAM from sysctl/vm_stat or
+  `/proc/meminfo`.

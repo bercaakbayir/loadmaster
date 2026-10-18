@@ -1,0 +1,15 @@
+[package]
+name = "loadmaster-hw"
+description = "loadmaster: GPU and host memory detection (NVML, Apple unified memory, /proc/meminfo)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+loadmaster-model.workspace = true
+
+[lints]
+workspace = true

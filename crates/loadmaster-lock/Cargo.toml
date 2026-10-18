@@ -1,0 +1,16 @@
+[package]
+name = "loadmaster-lock"
+description = "loadmaster: models.lock schema, validation, diff and migration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+loadmaster-model.workspace = true
+loadmaster-plan.workspace = true
+
+[lints]
+workspace = true

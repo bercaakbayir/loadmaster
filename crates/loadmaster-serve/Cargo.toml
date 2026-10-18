@@ -1,0 +1,16 @@
+[package]
+name = "loadmaster-serve"
+description = "loadmaster: Supervisor: process manager, footprint-based eviction, OpenAI-compatible proxy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+loadmaster-lock.workspace = true
+loadmaster-hw.workspace = true
+
+[lints]
+workspace = true

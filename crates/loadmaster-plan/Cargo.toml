@@ -1,0 +1,16 @@
+[package]
+name = "loadmaster-plan"
+description = "loadmaster: Footprint arithmetic, KV budget, layer-split search and runtime flag emitters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+loadmaster-model.workspace = true
+loadmaster-hw.workspace = true
+
+[lints]
+workspace = true

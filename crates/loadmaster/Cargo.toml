@@ -1,0 +1,30 @@
+[package]
+name = "loadmaster"
+description = "Weight, balance and preflight for local LLMs: will it fit, how to launch it, does it actually emit tool calls"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+
+[[bin]]
+name = "loadmaster"
+path = "src/main.rs"
+
+[dependencies]
+loadmaster-model.workspace = true
+loadmaster-hw.workspace = true
+loadmaster-plan.workspace = true
+loadmaster-store.workspace = true
+loadmaster-lock.workspace = true
+loadmaster-serve.workspace = true
+loadmaster-probe.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

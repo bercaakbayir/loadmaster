@@ -49,7 +49,7 @@ struct HwArgs {
 
 #[derive(Args)]
 struct PlanArgs {
-    /// Path to a .gguf model file (for split models, any part).
+    /// A .gguf file (for split models, any part) or a Hugging Face model directory.
     model: PathBuf,
     /// `auto`, a GPU index, or part of a GPU name from `loadmaster gpu`.
     #[arg(long, default_value = "auto")]

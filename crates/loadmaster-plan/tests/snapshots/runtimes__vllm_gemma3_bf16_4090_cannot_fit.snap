@@ -1,0 +1,19 @@
+---
+source: crates/loadmaster-plan/tests/runtimes.rs
+expression: "render(hf_model(HF_GEMMA3_12B), FakeHw::rtx_4090(), Runtime::Vllm, None)"
+---
+gemma-3-12b-it · gemma3 · BF16 · 48 layers  ·  ctx 131072
+does not fit: 0.89 GiB short on NVIDIA GeForce RTX 4090 (23.50 GiB usable)
+cheapest fixes:
+  - weights and activations alone exceed the GPU; use a smaller quant (AWQ/GPTQ 4-bit)
+  - use --runtime llama.cpp with a GGUF quant, which can offload layers to the CPU
+
+WEIGHT   closest configuration
+  weights             21.92 GiB   every tensor on GPU (vLLM does not offload by default)
+  activations          0.74 GiB   vLLM profiling reserve: 512 MiB + 20 MiB x 12.2B params
+  vision projector     0.78 GiB   0.78 GiB weights + one image: 256 tokens (mm_tokens_per_image in config.json) x n_embd 3840 x 2 B
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB); outside --gpu-memory-utilization
+
+BALANCE  tried:
+    over KV auto (model dtype): pool holds 0 tokens         GPU   24.21 GiB  host    0.00 GiB
+    over KV fp8: pool holds 0 tokens                        GPU   24.21 GiB  host    0.00 GiB

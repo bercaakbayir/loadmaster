@@ -1,6 +1,19 @@
 //! Runtime flag emitters. Each is a pure function of a [`Plan`](crate::Plan).
 
+pub mod exl3;
 pub mod llama_cpp;
+pub mod vllm;
+
+use crate::{Plan, Runtime};
+
+/// The launch command for a plan, as one shell line; for exl3 the config file follows.
+pub fn command(plan: &Plan) -> String {
+    let line = shell_join(&plan.argv);
+    match (&plan.runtime, &plan.config_file) {
+        (Runtime::Exl3, Some(f)) => format!("{line}\n\n# {}\n{}", f.name, f.contents.trim_end()),
+        _ => line,
+    }
+}
 
 /// Join argv into one line a POSIX shell reads back as the same argv.
 pub fn shell_join(argv: &[String]) -> String {

@@ -16,7 +16,7 @@ enum JsonOut<'a> {
 }
 
 pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
-    let model = ModelInfo::from_gguf(&args.model)?;
+    let model = ModelInfo::open(&args.model)?;
     let snap = super::snapshot(args.hw.hw_file.as_deref())?;
     let gpu =
         match args.gpu.as_str() {

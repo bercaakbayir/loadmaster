@@ -1,0 +1,24 @@
+---
+source: crates/loadmaster-plan/tests/runtimes.rs
+expression: "render(hf_model(HF_LLAMA_8B), FakeHw::rtx_4090(), Runtime::Vllm, None)"
+---
+WEIGHT   Meta-Llama-3.1-8B-Instruct · llama · BF16 · 32 layers
+  weights             14.96 GiB   every tensor on GPU (vLLM does not offload by default)
+  activations          0.66 GiB   vLLM profiling reserve: 512 MiB + 20 MiB x 8.0B params
+  KV cache             6.93 GiB   KV pool 6.93 GiB: what --gpu-memory-utilization 0.94 leaves; 56800 tokens of auto (model dtype) KV fit, one 56800-token sequence needs 6.93 GiB
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB); outside --gpu-memory-utilization
+  ------------------------------
+  GPU total           23.33 GiB   of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (NVML free; 0.49 GiB held by other processes)
+  host total           0.00 GiB   of 48.00 GiB available host memory
+
+BALANCE  all 32 layers and the output head on GPU
+  ctx 56800: not given; the largest max_model_len whose KV fits the pool (training context 131072)
+  KV cache auto: the model dtype fits
+  tried:
+    fits KV auto (model dtype): pool holds 56800 tokens     GPU   23.33 GiB  host    0.00 GiB
+
+COMMAND
+  vllm serve fixtures/hf/Meta-Llama-3.1-8B-Instruct --max-model-len 56800 --gpu-memory-utilization 0.94
+
+alternatives:
+  more context (65536)     23.33 GiB ( +0.00 GiB)  all on GPU, fp8 KV                     full GPU speed

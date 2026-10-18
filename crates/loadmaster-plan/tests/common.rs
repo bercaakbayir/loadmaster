@@ -44,3 +44,22 @@ pub fn all_models() -> &'static [ModelInfo] {
     static MODELS: OnceLock<Vec<ModelInfo>> = OnceLock::new();
     MODELS.get_or_init(|| ALL.iter().map(|m| model(m)).collect())
 }
+
+pub const HF_LLAMA_8B: &str = "Meta-Llama-3.1-8B-Instruct";
+pub const HF_QWEN3_AWQ: &str = "Qwen3-8B-AWQ";
+pub const HF_GEMMA3_12B: &str = "gemma-3-12b-it";
+pub const HF_QWEN3_EXL3: &str = "Qwen3-8B-exl3-4.0bpw";
+
+/// Load an HF fixture directory, with paths made relative and treated as complete.
+pub fn hf_model(name: &str) -> ModelInfo {
+    let hf_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/hf");
+    let mut info = ModelInfo::open(hf_root.join(name)).unwrap();
+    let rel = |p: &Path| PathBuf::from("fixtures/hf").join(p.strip_prefix(&hf_root).unwrap());
+    info.path = rel(&info.path);
+    info.files = info.files.iter().map(|p| rel(p)).collect();
+    if let Some(m) = &mut info.mmproj {
+        m.path = rel(&m.path);
+    }
+    info.complete = true;
+    info
+}

@@ -1,0 +1,24 @@
+---
+source: crates/loadmaster-plan/tests/runtimes.rs
+expression: "render(hf_model(HF_QWEN3_AWQ), FakeHw::rtx_3060_12g(), Runtime::Vllm,\nSome(32768))"
+---
+WEIGHT   Qwen3-8B-AWQ · qwen3 · AWQ-4bit · 36 layers
+  weights              5.68 GiB   every tensor on GPU (vLLM does not offload by default)
+  activations          0.66 GiB   vLLM profiling reserve: 512 MiB + 20 MiB x 8.2B params
+  KV cache             4.58 GiB   KV pool 4.58 GiB: what --gpu-memory-utilization 0.91 leaves; 33344 tokens of auto (model dtype) KV fit, one 32768-token sequence needs 4.50 GiB
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB); outside --gpu-memory-utilization
+  ------------------------------
+  GPU total           11.70 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  host total           0.00 GiB   of 24.00 GiB available host memory
+
+BALANCE  all 36 layers and the output head on GPU
+  ctx 32768: requested with --ctx
+  KV cache auto: the model dtype fits
+  tried:
+    fits KV auto (model dtype): pool holds 33344 tokens     GPU   11.62 GiB  host    0.00 GiB
+
+COMMAND
+  vllm serve fixtures/hf/Qwen3-8B-AWQ --max-model-len 32768 --gpu-memory-utilization 0.91
+
+alternatives:
+  more context (40960)     11.70 GiB ( +0.00 GiB)  all on GPU, fp8 KV                     full GPU speed

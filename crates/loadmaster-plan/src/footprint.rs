@@ -17,28 +17,35 @@ pub const COMPUTE_BASE_NO_FA: u64 = 32 * MIB;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KvType {
+    /// 16-bit (f16 on llama.cpp, the model dtype on vLLM, FP16 on exl3).
     F16,
     Q8_0,
     Q4_0,
+    /// vLLM `--kv-cache-dtype fp8`: one byte per element.
+    Fp8,
 }
 
 impl KvType {
+    /// The llama.cpp cache types, in preference order.
     pub const ALL: [KvType; 3] = [KvType::F16, KvType::Q8_0, KvType::Q4_0];
 
-    pub fn ggml(self) -> GgmlType {
+    /// Bytes for a row of `n` elements, or `None` when `n` is not a whole number of blocks.
+    pub fn row_bytes(self, n: u64) -> Option<u64> {
         match self {
-            KvType::F16 => GgmlType::F16,
-            KvType::Q8_0 => GgmlType::Q8_0,
-            KvType::Q4_0 => GgmlType::Q4_0,
+            KvType::F16 => GgmlType::F16.row_bytes(n),
+            KvType::Q8_0 => GgmlType::Q8_0.row_bytes(n),
+            KvType::Q4_0 => GgmlType::Q4_0.row_bytes(n),
+            KvType::Fp8 => Some(n),
         }
     }
 
-    /// The llama.cpp `-ctk`/`-ctv` value.
+    /// The llama.cpp `-ctk`/`-ctv` value (and the name used in explanations).
     pub fn flag(self) -> &'static str {
         match self {
             KvType::F16 => "f16",
             KvType::Q8_0 => "q8_0",
             KvType::Q4_0 => "q4_0",
+            KvType::Fp8 => "fp8",
         }
     }
 
@@ -141,8 +148,7 @@ pub fn kv_cells(cfg: &Config, layer: &Layer, window: Option<u32>) -> u64 {
 /// Bytes per KV cell for one layer, or `None` when the row width is not a whole number
 /// of blocks for a quantised cache type.
 pub fn kv_bytes_per_cell(kv: KvType, layer: &Layer) -> Option<u64> {
-    let t = kv.ggml();
-    Some(t.row_bytes(layer.k_dim.into())? + t.row_bytes(layer.v_dim.into())?)
+    Some(kv.row_bytes(layer.k_dim.into())? + kv.row_bytes(layer.v_dim.into())?)
 }
 
 /// Whether every layer's KV rows are valid for `kv`.
@@ -398,6 +404,7 @@ fn kv_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
         KvType::F16 => "2 B".to_owned(),
         KvType::Q8_0 => "34/32 B".to_owned(),
         KvType::Q4_0 => "18/32 B".to_owned(),
+        KvType::Fp8 => "1 B".to_owned(),
     };
     let swa = gpu.iter().filter(|l| l.swa).count();
     if swa > 0 {

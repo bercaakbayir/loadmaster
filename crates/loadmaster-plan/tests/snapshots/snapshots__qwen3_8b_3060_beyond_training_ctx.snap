@@ -24,3 +24,9 @@ BALANCE  all 36 layers and the output head on GPU
 
 COMMAND
   llama-server -m fixtures/gguf/qwen3-8b/Qwen3-8B-Q4_K_M.gguf -c 65536 -ngl 37 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+
+alternatives:
+  quant up (Q5_K_M)        11.30 GiB ( +0.76 GiB)  all on GPU, q8_0 KV                    full GPU speed
+                         size estimated from 5.70 bpw; plan the real file to confirm
+  quant down (Q3_K_M)       9.62 GiB ( -0.92 GiB)  all on GPU, q8_0 KV                    full GPU speed
+                         size estimated from 3.91 bpw; plan the real file to confirm

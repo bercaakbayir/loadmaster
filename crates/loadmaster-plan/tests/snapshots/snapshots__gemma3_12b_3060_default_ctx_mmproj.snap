@@ -24,3 +24,10 @@ BALANCE  all 48 layers and the output head on GPU
 
 COMMAND
   llama-server -m fixtures/gguf/gemma-3-12b/gemma-3-12b-it-Q4_K_M.gguf --mmproj fixtures/gguf/gemma-3-12b/mmproj-gemma-3-12b-it-F16.gguf -c 65536 -ngl 49 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+
+alternatives:
+  more context (131072)    11.49 GiB ( -0.04 GiB)  36/48 layers on GPU, q8_0 KV           2.1-4.5x slower (estimate)
+  quant up (Q5_K_M)        11.56 GiB ( +0.03 GiB)  all on GPU, q4_0 KV                    full GPU speed
+                         size estimated from 5.70 bpw; plan the real file to confirm
+  quant down (Q3_K_M)      10.14 GiB ( -1.39 GiB)  all on GPU, q8_0 KV                    full GPU speed
+                         size estimated from 3.91 bpw; plan the real file to confirm

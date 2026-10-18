@@ -25,3 +25,6 @@ BALANCE  all 24 layers and the output head on GPU, routed experts of the first 5
 
 COMMAND
   llama-server -m fixtures/gguf/gpt-oss-20b/gpt-oss-20b-mxfp4.gguf -c 131072 -ngl 25 --n-cpu-moe 5 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+
+alternatives:
+  no offload (16384)       11.70 GiB ( +0.17 GiB)  all on GPU, q4_0 KV                    full GPU speed

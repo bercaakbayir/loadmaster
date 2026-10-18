@@ -22,3 +22,9 @@ BALANCE  all 27 layers and the output head on GPU
 
 COMMAND
   llama-server -m fixtures/gguf/deepseek-v2-lite/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf -c 163840 -ngl 28 -fa on -np 1 --jinja
+
+alternatives:
+  quant up (Q5_K_M)        22.48 GiB ( +1.73 GiB)  all on GPU, f16 KV                     full GPU speed
+                         size estimated from 5.70 bpw; plan the real file to confirm
+  quant down (Q3_K_M)      18.65 GiB ( -2.10 GiB)  all on GPU, f16 KV                     full GPU speed
+                         size estimated from 3.91 bpw; plan the real file to confirm

@@ -3,14 +3,17 @@
 //! [`plan`] is a pure function of a [`ModelInfo`], a [`HwSnapshot`] and a [`PlanRequest`]:
 //! no clock, randomness or environment, so the same inputs give byte-identical output.
 
+pub mod alternatives;
 pub mod emit;
 pub mod explain;
 pub mod footprint;
+mod vllm;
 
 use loadmaster_hw::{Gpu, Host, HwSnapshot, MIB, MemoryKind, Vendor};
-use loadmaster_model::ModelInfo;
+use loadmaster_model::{Format, ModelInfo, Quant, Source};
 use serde::Serialize;
 
+pub use alternatives::Alternative;
 pub use footprint::{Config, Footprint, Headroom, KvType, Placement, Term, gib};
 
 /// Default headroom on NVIDIA: driver reserve and CUDA context.
@@ -83,6 +86,15 @@ pub struct ModelSummary {
     pub mmproj: Option<String>,
     pub moe: bool,
     pub chat_template_blake3: Option<String>,
+    /// `org/name` when the model came from the Hugging Face cache (vLLM serves by repo id).
+    pub hf_repo: Option<String>,
+}
+
+/// A config file a runtime reads instead of (or as well as) flags.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ConfigFile {
+    pub name: String,
+    pub contents: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -109,6 +121,10 @@ pub struct Plan {
     pub warnings: Vec<String>,
     /// The launch command as argv.
     pub argv: Vec<String>,
+    /// For runtimes configured by file (tabbyAPI), the file to write next to the command.
+    pub config_file: Option<ConfigFile>,
+    /// Nearby configurations: more context, the next quant up and down, no offload.
+    pub alternatives: Vec<Alternative>,
 }
 
 /// A suggested change that would make the model fit.
@@ -135,8 +151,11 @@ pub struct NoFit {
 pub enum Error {
     #[error("{} does not fit: {} short on {}", .0.model.path, gib(.0.short_by), .0.limit)]
     CannotFit(Box<NoFit>),
-    #[error("planning for {} is not implemented yet; use --runtime llama.cpp", .0.name())]
-    RuntimeNotSupported(Runtime),
+    #[error("{runtime} cannot run this: {reason}")]
+    RuntimeUnavailable {
+        runtime: &'static str,
+        reason: String,
+    },
     #[error(
         "{kv} KV cache does not work for {model}: KV row width is not a multiple of 32; use f16"
     )]
@@ -277,22 +296,100 @@ fn summary(model: &ModelInfo) -> ModelSummary {
         mmproj: model.mmproj.as_ref().map(|m| m.path.display().to_string()),
         moe: model.is_moe(),
         chat_template_blake3: model.chat_template.as_ref().map(|t| t.blake3.clone()),
+        hf_repo: match &model.source {
+            Source::HfCache { repo, .. } => Some(repo.clone()),
+            _ => None,
+        },
     }
 }
 
-/// Plan `model` on `gpu` (one of `hw.gpus`).
+/// Plan `model` on `gpu` (one of `hw.gpus`), with alternatives.
 pub fn plan(
     model: &ModelInfo,
     hw: &HwSnapshot,
     gpu: &Gpu,
     req: &PlanRequest,
 ) -> Result<Plan, Error> {
-    if req.runtime != Runtime::LlamaCpp {
-        return Err(Error::RuntimeNotSupported(req.runtime));
-    }
+    let mut p = plan_one(model, hw, gpu, req)?;
+    p.alternatives = alternatives::compute(model, hw, gpu, req, &p);
+    Ok(p)
+}
+
+/// One plan, without alternatives.
+pub(crate) fn plan_one(
+    model: &ModelInfo,
+    hw: &HwSnapshot,
+    gpu: &Gpu,
+    req: &PlanRequest,
+) -> Result<Plan, Error> {
     if req.ctx == Some(0) {
         return Err(Error::ZeroContext);
     }
+    let unavailable = |reason: &str| Error::RuntimeUnavailable {
+        runtime: req.runtime.name(),
+        reason: reason.into(),
+    };
+    match req.runtime {
+        Runtime::LlamaCpp => {
+            if model.format != Format::Gguf {
+                return Err(unavailable(
+                    "llama.cpp loads GGUF files; convert with convert_hf_to_gguf.py or pass a .gguf, or use --runtime vllm",
+                ));
+            }
+            search_plan(model, hw, gpu, req, true)
+        }
+        Runtime::Vllm => vllm::plan(model, hw, gpu, req, common_warnings(model)),
+        Runtime::Exl3 => {
+            if gpu.vendor != Vendor::Nvidia {
+                return Err(unavailable("ExLlamaV3 needs an NVIDIA GPU (CUDA)"));
+            }
+            if !matches!(model.quant, Quant::Exl3 { .. }) {
+                return Err(unavailable(&format!(
+                    "this model is {}, not an EXL3 quant; pass an EXL3 model directory",
+                    model.quant
+                )));
+            }
+            // tabbyAPI processes prompts in chunks of 2048 tokens.
+            let req = PlanRequest {
+                n_ubatch: if req.n_ubatch == DEFAULT_UBATCH {
+                    2048
+                } else {
+                    req.n_ubatch
+                },
+                ..req.clone()
+            };
+            let mut p = search_plan(model, hw, gpu, &req, false)?;
+            p.warnings.push(
+                "ExLlamaV3 compute buffer is estimated with the llama.cpp formula; not yet validated".into(),
+            );
+            Ok(p)
+        }
+    }
+}
+
+fn common_warnings(model: &ModelInfo) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if !model.arch_known {
+        warnings.push(format!(
+            "architecture `{}` is not in loadmaster's table; assumed dense full attention",
+            model.arch
+        ));
+    }
+    if !model.complete {
+        warnings.push("model file is shorter than its tensor table (incomplete download?)".into());
+    }
+    warnings
+}
+
+/// The llama.cpp-style search: every layer on the GPU with the best KV type, then (when
+/// `allow_offload`) experts and layers to the CPU.
+fn search_plan(
+    model: &ModelInfo,
+    hw: &HwSnapshot,
+    gpu: &Gpu,
+    req: &PlanRequest,
+    allow_offload: bool,
+) -> Result<Plan, Error> {
     if let Some(kv) = req.kv
         && !footprint::kv_type_valid(model, kv)
     {
@@ -309,16 +406,7 @@ pub fn plan(
         headroom: headroom_for(gpu, req.headroom),
         n_ubatch: req.n_ubatch,
     };
-    let mut warnings = Vec::new();
-    if !model.arch_known {
-        warnings.push(format!(
-            "architecture `{}` is not in loadmaster's table; assumed dense full attention",
-            model.arch
-        ));
-    }
-    if !model.complete {
-        warnings.push("model file is shorter than its tensor table (incomplete download?)".into());
-    }
+    let mut warnings = common_warnings(model);
 
     let kv_order: Vec<KvType> = match req.kv {
         Some(kv) => vec![kv],
@@ -355,7 +443,7 @@ pub fn plan(
 
     // 2. Offload with q8_0 KV (or the forced type): routed experts first for MoE, since
     //    they dominate bytes but not latency, then whole layers.
-    if st.chosen.is_none() {
+    if st.chosen.is_none() && allow_offload {
         let kv = match req.kv {
             Some(kv) => kv,
             None if kv_order.contains(&KvType::Q8_0) => KvType::Q8_0,
@@ -462,8 +550,16 @@ pub fn plan(
         trials,
         warnings,
         argv: Vec::new(),
+        config_file: None,
+        alternatives: Vec::new(),
     };
-    plan.argv = emit::llama_cpp::argv(&plan);
+    match req.runtime {
+        Runtime::Exl3 => {
+            plan.config_file = Some(emit::exl3::config(&plan));
+            plan.argv = emit::exl3::argv();
+        }
+        _ => plan.argv = emit::llama_cpp::argv(&plan),
+    }
     Ok(plan)
 }
 

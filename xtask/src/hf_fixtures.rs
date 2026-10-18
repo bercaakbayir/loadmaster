@@ -11,7 +11,7 @@ type T = (String, &'static str, Vec<u64>);
 fn dtype_bytes(dtype: &str) -> u64 {
     match dtype {
         "F32" | "I32" => 4,
-        "BF16" | "F16" => 2,
+        "BF16" | "F16" | "I16" => 2,
         "F8_E4M3" | "U8" | "I8" => 1,
         d => panic!("unknown dtype {d}"),
     }
@@ -251,6 +251,65 @@ fn gemma3_multimodal() -> Dir {
     }
 }
 
+/// EXL3 linear: an int16 trellis of `in/16 x out/16 x 16*bits` plus f16 input/output
+/// sign vectors, i.e. `bits / 8` bytes per weight.
+fn exl3_linear(name: &str, input: u64, output: u64, bits: u64) -> Vec<T> {
+    vec![
+        (
+            format!("{name}.trellis"),
+            "I16",
+            vec![input / 16, output / 16, 16 * bits],
+        ),
+        (format!("{name}.suh"), "F16", vec![input]),
+        (format!("{name}.svh"), "F16", vec![output]),
+    ]
+}
+
+fn qwen3_exl3() -> Dir {
+    let (h, q, kv, ff, vocab, n_layer, bits) = (4096, 4096, 1024, 12288, 151936, 36, 4);
+    let mut all: Vec<T> = vec![("model.embed_tokens.weight".into(), "F16", vec![vocab, h])];
+    for il in 0..n_layer {
+        let p = format!("model.layers.{il}");
+        all.push((format!("{p}.input_layernorm.weight"), "F16", vec![h]));
+        all.push((
+            format!("{p}.post_attention_layernorm.weight"),
+            "F16",
+            vec![h],
+        ));
+        all.extend(exl3_linear(&format!("{p}.self_attn.q_proj"), h, q, bits));
+        all.extend(exl3_linear(&format!("{p}.self_attn.k_proj"), h, kv, bits));
+        all.extend(exl3_linear(&format!("{p}.self_attn.v_proj"), h, kv, bits));
+        all.extend(exl3_linear(&format!("{p}.self_attn.o_proj"), q, h, bits));
+        all.extend(exl3_linear(&format!("{p}.mlp.gate_proj"), h, ff, bits));
+        all.extend(exl3_linear(&format!("{p}.mlp.up_proj"), h, ff, bits));
+        all.extend(exl3_linear(&format!("{p}.mlp.down_proj"), ff, h, bits));
+    }
+    all.push(("model.norm.weight".into(), "F16", vec![h]));
+    all.extend(exl3_linear("lm_head", h, vocab, 6));
+    let mut files = sharded(&all, 2);
+    files.insert(
+        "config.json".into(),
+        json_file(&json!({
+            "architectures": ["Qwen3ForCausalLM"],
+            "model_type": "qwen3",
+            "hidden_size": h, "intermediate_size": ff, "head_dim": 128,
+            "num_hidden_layers": n_layer, "num_attention_heads": 32, "num_key_value_heads": 8,
+            "max_position_embeddings": 40960, "vocab_size": vocab,
+            "tie_word_embeddings": false, "torch_dtype": "bfloat16",
+            "quantization_config": { "quant_method": "exl3", "bits": 4.0, "head_bits": 6, "calibration": { "rows": 250, "cols": 2048 } }
+        })),
+    );
+    Dir {
+        name: "Qwen3-8B-exl3-4.0bpw",
+        files,
+    }
+}
+
 pub fn dirs() -> Vec<Dir> {
-    vec![llama_bf16_sharded(), qwen3_awq(), gemma3_multimodal()]
+    vec![
+        llama_bf16_sharded(),
+        qwen3_awq(),
+        gemma3_multimodal(),
+        qwen3_exl3(),
+    ]
 }

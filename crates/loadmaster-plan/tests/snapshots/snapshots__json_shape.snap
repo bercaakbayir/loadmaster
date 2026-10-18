@@ -13,7 +13,8 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
     "weight_bytes": 5274861568,
     "mmproj": null,
     "moe": false,
-    "chat_template_blake3": "b726b61131c363d8971280697b6649f1431afe59fc70f380dfa6539b1b3b1ebf"
+    "chat_template_blake3": "b726b61131c363d8971280697b6649f1431afe59fc70f380dfa6539b1b3b1ebf",
+    "hf_repo": null
   },
   "gpu": {
     "index": 0,
@@ -98,5 +99,41 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
     "-np",
     "1",
     "--jinja"
+  ],
+  "config_file": null,
+  "alternatives": [
+    {
+      "label": "more context (16384)",
+      "ctx": 16384,
+      "quant": "Q4_K_M",
+      "fits": true,
+      "gpu_bytes": 8343158784,
+      "delta_bytes": 1245708288,
+      "placement": "all on GPU, f16 KV",
+      "slowdown_x100": null,
+      "note": null
+    },
+    {
+      "label": "quant up (Q5_K_M)",
+      "ctx": 8192,
+      "quant": "Q5_K_M",
+      "fits": true,
+      "gpu_bytes": 7913215089,
+      "delta_bytes": 815764593,
+      "placement": "all on GPU, f16 KV",
+      "slowdown_x100": null,
+      "note": "size estimated from 5.70 bpw; plan the real file to confirm"
+    },
+    {
+      "label": "quant down (Q3_K_M)",
+      "ctx": 8192,
+      "quant": "Q3_K_M",
+      "fits": true,
+      "gpu_bytes": 6110476053,
+      "delta_bytes": -986974443,
+      "placement": "all on GPU, f16 KV",
+      "slowdown_x100": null,
+      "note": "size estimated from 3.91 bpw; plan the real file to confirm"
+    }
   ]
 }

@@ -1,0 +1,3 @@
+{
+  "chat_template": "{{ bos_token }}{% for m in messages %}<|start_header_id|>{{ m.role }}<|end_header_id|>\n\n{{ m.content }}<|eot_id|>{% endfor %}"
+}

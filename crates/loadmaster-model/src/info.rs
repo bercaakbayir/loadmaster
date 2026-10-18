@@ -12,6 +12,8 @@ use crate::gguf::{GgmlType, Gguf, Value, file_type_name};
 #[serde(rename_all = "snake_case")]
 pub enum Format {
     Gguf,
+    /// A Hugging Face model directory: `config.json` plus `*.safetensors`.
+    Safetensors,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -19,12 +21,33 @@ pub enum Format {
 pub enum Quant {
     /// llama.cpp file type, e.g. `Q4_K_M`.
     Gguf(String),
+    /// Unquantised safetensors, by dominant dtype: `BF16`, `F16`, `F32`.
+    Float(String),
+    Awq {
+        bits: u32,
+    },
+    Gptq {
+        bits: u32,
+    },
+    Fp8,
+    /// ExLlamaV3, bits per weight x 100.
+    Exl3 {
+        bpw_x100: u32,
+    },
+    /// Another `quantization_config.quant_method` (e.g. `compressed-tensors`, `mxfp4`).
+    Other(String),
 }
 
 impl std::fmt::Display for Quant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Quant::Gguf(name) => f.write_str(name),
+            Quant::Gguf(name) | Quant::Float(name) | Quant::Other(name) => f.write_str(name),
+            Quant::Awq { bits } => write!(f, "AWQ-{bits}bit"),
+            Quant::Gptq { bits } => write!(f, "GPTQ-{bits}bit"),
+            Quant::Fp8 => f.write_str("FP8"),
+            Quant::Exl3 { bpw_x100 } => {
+                write!(f, "EXL3-{}.{:02}bpw", bpw_x100 / 100, bpw_x100 % 100)
+            }
         }
     }
 }
@@ -32,8 +55,14 @@ impl std::fmt::Display for Quant {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
-    /// A file passed by path.
+    /// A file or directory passed by path, or found in a `--path` directory.
     Loose,
+    /// Hugging Face hub cache: `models--org--name/snapshots/<revision>`.
+    HfCache { repo: String, revision: String },
+    /// Ollama store: a model blob named by its manifest.
+    Ollama { name: String, digest: String },
+    /// LM Studio models directory: `<publisher>/<repo>/<file>`.
+    LmStudio { repo: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

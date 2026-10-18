@@ -1,10 +1,12 @@
 //! GGUF and safetensors metadata parsers, chat-template extraction, quant tables.
 //!
-//! Reads headers only; tensor data is never loaded.
+//! Reads headers only; tensor data is never loaded. [`ModelInfo::open`] takes a `.gguf`
+//! file or a Hugging Face model directory.
 
 pub mod arch;
 pub mod gguf;
 mod info;
+pub mod safetensors;
 
 use std::path::PathBuf;
 
@@ -25,6 +27,8 @@ pub enum Error {
     IsProjector { path: PathBuf },
     #[error("{path}: split GGUF: {reason}")]
     Split { path: PathBuf, reason: String },
+    #[error("{path}: not a model: {reason}")]
+    NotAModel { path: PathBuf, reason: String },
     #[error("{path}: inconsistent metadata: {reason}")]
     Inconsistent { path: PathBuf, reason: String },
 }

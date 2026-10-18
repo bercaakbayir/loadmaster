@@ -1,4 +1,5 @@
-//! Synthetic header-only GGUF fixtures shaped like real models. The tensor tables match
+//! Synthetic header-only GGUF fixtures (and, via `hf_fixtures`, HF model directories) shaped
+//! like real models. The tensor tables match
 //! the real architectures closely enough for footprint arithmetic; tensor types approximate
 //! each quant mix. Regenerate with `cargo xtask gen-fixtures`; CI runs `--check`.
 
@@ -416,16 +417,22 @@ fn gemma3_mmproj() -> Vec<u8> {
 pub fn generate(root: &Path, check: bool) -> anyhow::Result<()> {
     let mut files: Vec<(String, Vec<u8>)> = specs()
         .iter()
-        .map(|s| (format!("{}/{}", s.dir, s.file), model(s)))
+        .map(|s| (format!("gguf/{}/{}", s.dir, s.file), model(s)))
         .collect();
     files.push((
-        "gemma-3-12b/mmproj-gemma-3-12b-it-F16.gguf".into(),
+        "gguf/gemma-3-12b/mmproj-gemma-3-12b-it-F16.gguf".into(),
         gemma3_mmproj(),
     ));
+    for dir in crate::hf_fixtures::dirs() {
+        for (name, bytes) in dir.files {
+            files.push((format!("hf/{}/{name}", dir.name), bytes));
+        }
+    }
 
     let mut stale = Vec::new();
     for (rel, bytes) in &files {
-        if bytes.len() > 64 * 1024 {
+        let binary = rel.ends_with(".gguf") || rel.ends_with(".safetensors");
+        if binary && bytes.len() > 64 * 1024 {
             bail!("{rel}: fixture is {} bytes, limit is 64 KiB", bytes.len());
         }
         let path = root.join(rel);

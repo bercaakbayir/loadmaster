@@ -6,6 +6,7 @@ use std::process::Command;
 use anyhow::{Context, bail};
 
 mod fixtures;
+mod hf_fixtures;
 
 /// Workspace crates each crate may depend on (normal and dev). Anything not listed is a
 /// boundary violation; in particular serve and probe must never see each other.
@@ -56,7 +57,7 @@ fn main() -> anyhow::Result<()> {
         Some("check-deps") => check_deps(),
         Some("gen-fixtures") => {
             let check = std::env::args().nth(2).as_deref() == Some("--check");
-            fixtures::generate(&workspace_root().join("fixtures/gguf"), check)
+            fixtures::generate(&workspace_root().join("fixtures"), check)
         }
         _ => bail!("usage: cargo xtask <check-deps | gen-fixtures [--check]>"),
     }

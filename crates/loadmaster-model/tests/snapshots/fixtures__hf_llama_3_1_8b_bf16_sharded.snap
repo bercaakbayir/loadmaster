@@ -1,0 +1,17 @@
+---
+source: crates/loadmaster-model/tests/fixtures.rs
+expression: summary(& info)
+---
+name: Some("Meta-Llama-3.1-8B-Instruct")
+arch: llama (known: true) kv: Gqa
+quant: BF16  params: 8.03B
+layers: 32  embd: 4096  vocab: 128256  heads: 32/8 x 128  ctx_train: 131072
+experts: None used None
+swa: window None, 0 of 32 layers
+weights: 14.958 GiB  (16060522496 bytes)
+embd: 0.979 GiB  output: 0.979 GiB (tied: false)  other: 0
+layer 0: 436224000 bytes (0 expert) k_dim 1024 v_dim 1024
+layer 31: 436224000 bytes (0 expert)
+template blake3: 203be69da228b9db2f3cf50962b926c32b73f82a865b35ecb5a20a6072d75dad
+mmproj: none
+complete: false

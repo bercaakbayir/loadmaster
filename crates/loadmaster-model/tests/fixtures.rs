@@ -191,3 +191,49 @@ fn split_gguf_loads_all_parts_from_any_part() {
     let err = ModelInfo::from_gguf(dir.path().join("m-00001-of-00003.gguf")).unwrap_err();
     assert!(err.to_string().contains("part 3 of 3 is missing"), "{err}");
 }
+
+fn hf(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/hf")
+        .join(name)
+}
+
+macro_rules! hf_test {
+    ($name:ident, $dir:literal) => {
+        #[test]
+        fn $name() {
+            let info = ModelInfo::open(hf($dir)).unwrap();
+            assert_eq!(info.format, loadmaster_model::Format::Safetensors);
+            assert!(!info.complete, "header-only fixtures are incomplete");
+            insta::assert_snapshot!(summary(&info));
+        }
+    };
+}
+
+hf_test!(hf_llama_3_1_8b_bf16_sharded, "Meta-Llama-3.1-8B-Instruct");
+hf_test!(hf_qwen3_8b_awq, "Qwen3-8B-AWQ");
+hf_test!(hf_gemma3_12b_multimodal, "gemma-3-12b-it");
+
+#[test]
+fn hf_config_json_path_works_too() {
+    let a = ModelInfo::open(hf("Qwen3-8B-AWQ")).unwrap();
+    let b = ModelInfo::open(hf("Qwen3-8B-AWQ").join("config.json")).unwrap();
+    assert_eq!(a.weight_bytes, b.weight_bytes);
+}
+
+#[test]
+fn hf_missing_shard_is_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    for f in [
+        "config.json",
+        "model.safetensors.index.json",
+        "model-00001-of-00002.safetensors",
+    ] {
+        std::fs::copy(hf("Qwen3-8B-AWQ").join(f), dir.path().join(f)).unwrap();
+    }
+    let err = ModelInfo::open(dir.path()).unwrap_err();
+    assert!(
+        err.to_string().contains("missing; download all shards"),
+        "{err}"
+    );
+}

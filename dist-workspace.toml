@@ -9,7 +9,7 @@ ci = "github"
 installers = ["shell", "powershell", "homebrew"]
 # The Homebrew formula is pushed to this tap on release; it must exist and the release
 # job needs a HOMEBREW_TAP_TOKEN secret with write access to it.
-tap = "ratel-sh/homebrew-tap"
+tap = "bercaakbayir/homebrew-tap"
 publish-jobs = ["homebrew"]
 formula = "loadmaster"
 # glibc, not musl, on Linux: NVML is dlopen()ed at runtime (ADR 0006).

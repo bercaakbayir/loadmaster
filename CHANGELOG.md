@@ -60,3 +60,10 @@ All notable changes to this project are documented here. The format follows
 - Alternatives table under every plan (and in `--json`): next context up, one GGUF quant
   step up and down (size estimated from bits per weight), and the no-offload context when
   the plan offloads, each with GPU bytes, the change from the plan, and a slowdown band.
+- `loadmaster-store` and `loadmaster scan [--path DIR] [--json]`: read-only index of the HF
+  hub cache (refs and snapshots, blobs counted once, GGUFs in subfolders), Ollama (schema 1
+  and 2 manifests, projector layers), LM Studio and loose directories, sorted by size, with
+  arch, quant, training context, projector, template hash and fit at 8k/32k/128k. Broken
+  symlinks, missing blobs and non-generative models are reported, not fatal.
+- `loadmaster plan <name>` resolves names from the stores (`llama3.2:1b`, `org/repo`,
+  `hf://org/repo/file.gguf`, or a unique file stem).

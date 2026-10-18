@@ -22,11 +22,13 @@ struct Cli {
 enum Command {
     /// Index local model stores (HF cache, Ollama, LM Studio, loose dirs). Read-only.
     Scan {
-        /// Extra directories to scan for loose GGUF files.
+        /// Extra directories to scan for GGUF files and HF model directories.
         #[arg(long)]
         path: Vec<PathBuf>,
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        hw: HwArgs,
     },
     /// Detect GPUs and usable memory.
     Gpu {
@@ -49,8 +51,9 @@ struct HwArgs {
 
 #[derive(Args)]
 struct PlanArgs {
-    /// A .gguf file (for split models, any part) or a Hugging Face model directory.
-    model: PathBuf,
+    /// A .gguf file (any part of a split model), a Hugging Face model directory, or a name
+    /// from `loadmaster scan` (`llama3.2:1b`, `org/repo`, `hf://org/repo/file.gguf`).
+    model: String,
     /// `auto`, a GPU index, or part of a GPU name from `loadmaster gpu`.
     #[arg(long, default_value = "auto")]
     gpu: String,
@@ -114,9 +117,7 @@ fn init_tracing(verbose: u8) {
 
 fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
-        Command::Scan { .. } => {
-            anyhow::bail!("`scan` is not implemented yet; pass a model path to `loadmaster plan`")
-        }
+        Command::Scan { path, json, hw } => cmd::scan::run(path, json, hw.hw_file.as_deref()),
         Command::Gpu { json, hw } => cmd::gpu::run(json, hw.hw_file.as_deref()),
         Command::Plan(args) => cmd::plan::run(args),
     }

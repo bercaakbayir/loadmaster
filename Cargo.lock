@@ -511,6 +511,10 @@ name = "loadmaster-store"
 version = "0.0.0"
 dependencies = [
  "loadmaster-model",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]

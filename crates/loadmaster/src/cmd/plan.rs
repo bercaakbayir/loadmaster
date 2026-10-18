@@ -1,7 +1,6 @@
 use std::process::ExitCode;
 
 use anyhow::Context;
-use loadmaster_model::ModelInfo;
 use loadmaster_plan::{Error, PlanRequest, explain};
 use serde::Serialize;
 
@@ -16,7 +15,7 @@ enum JsonOut<'a> {
 }
 
 pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
-    let model = ModelInfo::open(&args.model)?;
+    let model = super::open_model(&args.model)?;
     let snap = super::snapshot(args.hw.hw_file.as_deref())?;
     let gpu =
         match args.gpu.as_str() {

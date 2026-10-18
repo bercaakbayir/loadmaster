@@ -478,22 +478,27 @@ fn find_mmproj(path: &Path, model_files: &[PathBuf]) -> Result<Option<Mmproj>, E
         let name = p.to_string_lossy().to_ascii_lowercase();
         (!name.contains("f16"), name)
     });
-    for candidate in candidates {
-        let Ok(g) = Gguf::open(&candidate) else {
-            continue;
-        };
+    Ok(candidates.into_iter().find_map(|c| Mmproj::open(&c).ok()))
+}
+
+impl Mmproj {
+    /// Read a vision projector GGUF (architecture `clip`).
+    pub fn open(path: &Path) -> Result<Self, Error> {
+        let g = Gguf::open(path)?;
         if g.get_str("general.architecture") != Some("clip") {
-            continue;
+            return Err(Error::NotAModel {
+                path: path.to_path_buf(),
+                reason: "not a vision projector (architecture is not `clip`)".into(),
+            });
         }
-        let (n_img_tokens, basis) = image_tokens(&g);
-        return Ok(Some(Mmproj {
+        let (n_img_tokens, img_tokens_basis) = image_tokens(&g);
+        Ok(Mmproj {
             weight_bytes: g.tensor_bytes(),
-            path: candidate,
+            path: path.to_path_buf(),
             n_img_tokens,
-            img_tokens_basis: basis,
-        }));
+            img_tokens_basis,
+        })
     }
-    Ok(None)
 }
 
 fn image_tokens(g: &Gguf) -> (u32, String) {

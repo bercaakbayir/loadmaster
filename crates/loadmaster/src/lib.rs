@@ -39,6 +39,117 @@ enum Command {
     },
     /// Compute the memory budget and the exact launch command for a model.
     Plan(PlanArgs),
+    /// Scan, plan the chosen models, and write models.lock.
+    Init(InitArgs),
+    /// Plan one more model and add it to models.lock.
+    Add(AddArgs),
+    /// Serve the models in models.lock on one OpenAI-compatible port.
+    Up(UpArgs),
+    /// Stop a running `loadmaster up`.
+    Down(LockArgs),
+    /// Load a model now, unloading others if its footprint needs the room.
+    Swap {
+        name: String,
+        #[command(flatten)]
+        lock: LockArgs,
+    },
+    /// Show what the running supervisor has loaded.
+    Status {
+        #[arg(long)]
+        json: bool,
+        #[command(flatten)]
+        lock: LockArgs,
+    },
+    /// Convert another tool's config into models.lock.
+    #[command(subcommand)]
+    Import(ImportCmd),
+    /// A fake OpenAI-compatible runtime for tests.
+    #[command(name = "__fake-runtime", hide = true)]
+    FakeRuntime(cmd::fake::FakeArgs),
+}
+
+#[derive(Subcommand)]
+enum ImportCmd {
+    /// Import a llama-swap config.yaml.
+    LlamaSwap {
+        config: PathBuf,
+        /// Overwrite an existing models.lock.
+        #[arg(long)]
+        force: bool,
+        #[command(flatten)]
+        lock: LockArgs,
+        #[command(flatten)]
+        hw: HwArgs,
+    },
+}
+
+#[derive(Args, Clone)]
+struct LockArgs {
+    /// The lockfile.
+    #[arg(long, default_value = loadmaster_lock::FILE_NAME)]
+    lock: PathBuf,
+}
+
+#[derive(Args)]
+struct InitArgs {
+    /// Models to include, by name from `loadmaster scan`.
+    names: Vec<String>,
+    /// Include every model found.
+    #[arg(long, conflicts_with = "names")]
+    all: bool,
+    /// Context length for every model (default: the largest that fits on the GPU).
+    #[arg(long)]
+    ctx: Option<u32>,
+    /// Address the proxy listens on.
+    #[arg(long, default_value = loadmaster_lock::DEFAULT_LISTEN)]
+    listen: String,
+    /// Overwrite an existing models.lock.
+    #[arg(long)]
+    force: bool,
+    /// Skip hashing model files that the store does not already name by hash.
+    #[arg(long)]
+    no_hash: bool,
+    #[command(flatten)]
+    lock: LockArgs,
+    #[command(flatten)]
+    hw: HwArgs,
+}
+
+#[derive(Args)]
+struct AddArgs {
+    /// Model path or name from `loadmaster scan`.
+    model: String,
+    /// Name to serve it as (default: derived from the model).
+    #[arg(long = "as")]
+    name: Option<String>,
+    #[arg(long)]
+    ctx: Option<u32>,
+    #[arg(long, value_enum)]
+    runtime: Option<Runtime>,
+    /// Extra names the proxy maps to this model.
+    #[arg(long = "alias")]
+    aliases: Vec<String>,
+    /// Never unload for idleness, and evict last.
+    #[arg(long)]
+    keep_warm: bool,
+    #[arg(long)]
+    no_hash: bool,
+    #[command(flatten)]
+    lock: LockArgs,
+    #[command(flatten)]
+    hw: HwArgs,
+}
+
+#[derive(Args)]
+struct UpArgs {
+    /// After each model is ready, run the conformance probe and record verdicts in
+    /// models.lock.
+    #[arg(long)]
+    verify: bool,
+    #[command(flatten)]
+    lock: LockArgs,
+    #[command(flatten)]
+    hw: HwArgs,
 }
 
 #[derive(Args)]
@@ -67,11 +178,16 @@ struct PlanArgs {
     explain: bool,
     #[arg(long, conflicts_with = "explain")]
     json: bool,
+    /// Re-plan the models.lock entry named MODEL and write the new derived fields.
+    #[arg(long)]
+    update: bool,
+    #[arg(long, default_value = loadmaster_lock::FILE_NAME)]
+    lock: PathBuf,
     #[command(flatten)]
     hw: HwArgs,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Runtime {
     #[value(name = "llama.cpp")]
     LlamaCpp,
@@ -120,6 +236,20 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
         Command::Scan { path, json, hw } => cmd::scan::run(path, json, hw.hw_file.as_deref()),
         Command::Gpu { json, hw } => cmd::gpu::run(json, hw.hw_file.as_deref()),
+        Command::Plan(args) if args.update => cmd::lock::update(args),
         Command::Plan(args) => cmd::plan::run(args),
+        Command::Init(args) => cmd::lock::init(args),
+        Command::Add(args) => cmd::lock::add(args),
+        Command::Up(args) => cmd::serve::up(args),
+        Command::Down(lock) => cmd::serve::down(&lock.lock),
+        Command::Swap { name, lock } => cmd::serve::swap(&lock.lock, &name),
+        Command::Status { json, lock } => cmd::serve::status(&lock.lock, json),
+        Command::Import(ImportCmd::LlamaSwap {
+            config,
+            force,
+            lock,
+            hw,
+        }) => cmd::import::llama_swap(&config, &lock.lock, force, hw.hw_file.as_deref()),
+        Command::FakeRuntime(args) => cmd::fake::run(args),
     }
 }

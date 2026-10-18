@@ -1,0 +1,38 @@
+# Maintainer: Berca Akbayir <berca@ratel.sh>
+pkgname=loadmaster
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Weight, balance and preflight for local LLMs: will it fit, how to launch it, does it emit tool calls"
+arch=('x86_64' 'aarch64')
+url="https://github.com/ratel-sh/loadmaster"
+license=('MIT' 'Apache-2.0')
+depends=('gcc-libs' 'glibc')
+optdepends=('llama.cpp: the llama.cpp runtime'
+            'nvidia-utils: NVIDIA GPU detection (NVML)')
+makedepends=('cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  cargo build --frozen --release -p loadmaster
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  cargo test --frozen --workspace
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/loadmaster "$pkgdir/usr/bin/loadmaster"
+  install -Dm755 target/release/lm "$pkgdir/usr/bin/lm"
+  install -Dm644 packaging/systemd/loadmaster.service "$pkgdir/usr/lib/systemd/system/loadmaster.service"
+  install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

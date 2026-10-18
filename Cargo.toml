@@ -30,7 +30,7 @@ insta = "1.49"
 minijinja = "3.0"
 nvml-wrapper = "0.13"
 proptest = "1.12"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "blocking"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -40,6 +40,7 @@ tokio = { version = "1.53", features = ["full"] }
 toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
 yaml-rust2 = "0.13"
 sha2 = "0.11"
 nix = { version = "0.31", features = ["signal", "process"] }

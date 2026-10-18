@@ -11,6 +11,19 @@ authors.workspace = true
 [dependencies]
 loadmaster-lock.workspace = true
 loadmaster-hw.workspace = true
+axum.workspace = true
+futures-util.workspace = true
+nix.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

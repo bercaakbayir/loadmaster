@@ -1,0 +1,24 @@
+# Example unit: serve /etc/loadmaster/models.lock as the `loadmaster` user.
+#   sudo install -m644 packaging/systemd/loadmaster.service /etc/systemd/system/
+#   sudo systemctl enable --now loadmaster
+[Unit]
+Description=loadmaster: local LLM supervisor and OpenAI-compatible proxy
+After=network-online.target nvidia-persistenced.service
+Wants=network-online.target
+
+[Service]
+User=loadmaster
+Group=loadmaster
+Environment=LOADMASTER_HOME=/var/lib/loadmaster
+# The Hugging Face cache and Ollama store the lockfile's sources resolve against.
+Environment=HF_HOME=/var/lib/loadmaster/huggingface
+ExecStart=/usr/local/bin/loadmaster up --lock /etc/loadmaster/models.lock
+# `up` stops every runtime on SIGTERM (10 s grace each, then SIGKILL).
+KillMode=mixed
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=5
+StateDirectory=loadmaster
+
+[Install]
+WantedBy=multi-user.target

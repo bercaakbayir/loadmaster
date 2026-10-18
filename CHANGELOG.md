@@ -86,3 +86,15 @@ All notable changes to this project are documented here. The format follows
 - llama-swap importer: macros (global, per-model, `${env.X}`, `${MODEL_ID}`), multi-line
   `cmd` with comments, `llama-server` and `vllm serve`, aliases, `ttl`, `globalTTL`, `env`;
   containers and unknown servers skipped with a reason, unsupported settings reported.
+- `loadmaster-serve` and `loadmaster up | down | swap <name> | status`: lazy loading with a
+  pure footprint-based eviction scheduler (LRU, `keep_warm` last, models in use never;
+  property-tested), runtime processes with logs, `/health` readiness, crash restarts with
+  backoff (3, then `failed` with the log path), SIGTERM shutdown, idle unload, an
+  OpenAI-compatible proxy on one port (routing by name and alias, unbuffered streaming,
+  503 + `Retry-After` while loading), `/v1/models`, `/metrics`, admin endpoints.
+- `loadmaster init`, `add`, `plan --update <name>` and `import llama-swap`.
+- On unified memory the supervisor's budget is also capped by free RAM.
+- Packaging: Dockerfile (CUDA/CPU on llama.cpp's server images), systemd unit, AUR
+  PKGBUILD. Not yet built or tested; see `packaging/README.md`.
+- A fake OpenAI-compatible runtime (`loadmaster __fake-runtime`) that can misbehave in each
+  way the probe classifies; the end-to-end supervisor test runs on it.

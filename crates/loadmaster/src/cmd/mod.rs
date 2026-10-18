@@ -1,6 +1,10 @@
+pub mod fake;
 pub mod gpu;
+pub mod import;
+pub mod lock;
 pub mod plan;
 pub mod scan;
+pub mod serve;
 
 use std::path::Path;
 
@@ -46,4 +50,42 @@ pub fn open_model(arg: &str) -> anyhow::Result<loadmaster_model::ModelInfo> {
         Ok(info) => Ok((**info).clone()),
         Err(e) => anyhow::bail!("{}: {e}", entry.path.display()),
     }
+}
+
+/// `$LOADMASTER_HOME`, or `~/.loadmaster`: logs, probe captures, eval database.
+pub fn state_dir() -> std::path::PathBuf {
+    std::env::var_os("LOADMASTER_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default()
+                .join(".loadmaster")
+        })
+}
+
+/// The runtime to plan a model with: the requested one, or the natural one for its format.
+pub fn default_runtime(m: &loadmaster_model::ModelInfo) -> loadmaster_plan::Runtime {
+    use loadmaster_model::{Format, Quant};
+    match (&m.format, &m.quant) {
+        (Format::Gguf, _) => loadmaster_plan::Runtime::LlamaCpp,
+        (_, Quant::Exl3 { .. }) => loadmaster_plan::Runtime::Exl3,
+        _ => loadmaster_plan::Runtime::Vllm,
+    }
+}
+
+/// The GPU to plan for: `auto` (most usable memory), an index, or part of a name.
+pub fn pick_gpu(
+    snap: &loadmaster_hw::HwSnapshot,
+    query: &str,
+) -> anyhow::Result<loadmaster_hw::Gpu> {
+    use anyhow::Context;
+    let gpu =
+        match query {
+            "auto" => snap.best_gpu(),
+            q => Some(snap.find_gpu(q).with_context(|| {
+                format!("no GPU matches `{q}`; run `loadmaster gpu` to list them")
+            })?),
+        };
+    Ok(gpu.ok_or(loadmaster_plan::Error::NoGpu)?.clone())
 }

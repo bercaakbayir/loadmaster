@@ -185,3 +185,223 @@ fn scan_lists_stores_and_plan_resolves_names() {
     );
     assert!(stdout(&o).contains("sha256-abcd"));
 }
+
+/// A fake home with one Ollama model (the Qwen3 8B fixture).
+fn ollama_home() -> tempfile::TempDir {
+    let home = tempfile::tempdir().unwrap();
+    let blobs = home.path().join(".ollama/models/blobs");
+    let manifests = home
+        .path()
+        .join(".ollama/models/manifests/registry.ollama.ai/library/qwen3");
+    std::fs::create_dir_all(&blobs).unwrap();
+    std::fs::create_dir_all(&manifests).unwrap();
+    std::fs::copy(
+        workspace().join(QWEN3_8B),
+        blobs.join(format!("sha256-{}", "ab".repeat(32))),
+    )
+    .unwrap();
+    std::fs::write(
+        manifests.join("8b"),
+        format!(r#"{{"schemaVersion":2,"layers":[{{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:{}"}}]}}"#, "ab".repeat(32)),
+    )
+    .unwrap();
+    home
+}
+
+#[test]
+fn init_add_update_and_up_accepts_it() {
+    let home = ollama_home();
+    let hw = hw_file(&home, FakeHw::rtx_4090());
+    let hw = hw.to_str().unwrap();
+    let lock = home.path().join("models.lock");
+    let lock_s = lock.to_str().unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let listen = format!("127.0.0.1:{port}");
+
+    let o = run_in(
+        &[
+            "init",
+            "qwen3:8b",
+            "--ctx",
+            "8192",
+            "--listen",
+            &listen,
+            "--lock",
+            lock_s,
+            "--hw-file",
+            hw,
+        ],
+        home.path(),
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let text = std::fs::read_to_string(&lock).unwrap();
+    assert!(text.contains("name = \"qwen3:8b\""), "{text}");
+    assert!(text.contains("source = \"ollama://qwen3:8b\""), "{text}");
+    assert!(
+        text.contains(&format!("sha256 = \"{}\"", "ab".repeat(32))),
+        "digest reused, not re-hashed"
+    );
+    assert!(text.contains("ctx = 8192"));
+
+    // init refuses to overwrite; add appends under a new name with an alias.
+    let o = run_in(
+        &["init", "qwen3:8b", "--lock", lock_s, "--hw-file", hw],
+        home.path(),
+    );
+    assert_ne!(o.status.code(), Some(0));
+    let o = run_in(
+        &[
+            "add",
+            "qwen3:8b",
+            "--as",
+            "qwen-long",
+            "--ctx",
+            "32768",
+            "--alias",
+            "gpt-4o",
+            "--keep-warm",
+            "--lock",
+            lock_s,
+            "--hw-file",
+            hw,
+        ],
+        home.path(),
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let text = std::fs::read_to_string(&lock).unwrap();
+    assert!(
+        text.contains("name = \"qwen-long\"")
+            && text.contains("aliases = [\"gpt-4o\"]")
+            && text.contains("keep_warm = true")
+    );
+
+    // plan --update re-plans one entry and prints what changed.
+    let o = run_in(
+        &[
+            "plan",
+            "qwen3:8b",
+            "--update",
+            "--ctx",
+            "16384",
+            "--lock",
+            lock_s,
+            "--hw-file",
+            hw,
+        ],
+        home.path(),
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        stdout(&o).contains("~ qwen3:8b.ctx: 8192 -> 16384"),
+        "{}",
+        stdout(&o)
+    );
+    let o = run_in(
+        &[
+            "plan",
+            "qwen3:8b",
+            "--update",
+            "--ctx",
+            "16384",
+            "--lock",
+            lock_s,
+            "--hw-file",
+            hw,
+        ],
+        home.path(),
+    );
+    assert!(stdout(&o).contains("up to date"));
+
+    // up accepts it unedited (models load on demand, so no runtime is started here).
+    let mut up = Command::new(env!("CARGO_BIN_EXE_loadmaster"))
+        .args(["up", "--lock", lock_s, "--hw-file", hw])
+        .env("HOME", home.path())
+        .env("LOADMASTER_HOME", home.path())
+        .env_remove("HF_HOME")
+        .env_remove("HF_HUB_CACHE")
+        .env_remove("OLLAMA_MODELS")
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let url = format!("http://{listen}/v1/models");
+    let start = std::time::Instant::now();
+    let models = loop {
+        if let Ok(r) = reqwest::blocking::get(&url) {
+            break r.json::<serde_json::Value>().unwrap();
+        }
+        if let Some(s) = up.try_wait().unwrap() {
+            panic!("up exited: {s}");
+        }
+        assert!(start.elapsed() < std::time::Duration::from_secs(20));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+    assert_eq!(models["data"].as_array().unwrap().len(), 2);
+    let o = run_in(&["down", "--lock", lock_s], home.path());
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(up.wait().unwrap().success());
+}
+
+#[test]
+fn import_llama_swap_writes_a_valid_lockfile() {
+    let home = tempfile::tempdir().unwrap();
+    let hw = hw_file(&home, FakeHw::rtx_4090());
+    let lock = home.path().join("models.lock");
+    let config = workspace().join("crates/loadmaster-lock/tests/fixtures/llama-swap-homelab.yaml");
+    let o = run_in(
+        &[
+            "import",
+            "llama-swap",
+            config.to_str().unwrap(),
+            "--lock",
+            lock.to_str().unwrap(),
+            "--hw-file",
+            hw.to_str().unwrap(),
+        ],
+        home.path(),
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let out = stdout(&o);
+    assert!(
+        out.contains("imported qwen3-coder") && out.contains("footprint unknown"),
+        "{out}"
+    );
+    assert!(
+        out.contains("not planned:"),
+        "model files are not on this machine: {out}"
+    );
+    let text = std::fs::read_to_string(&lock).unwrap();
+    assert!(
+        text.contains("idle_unload_s = 900"),
+        "globalTTL carried over"
+    );
+    assert!(text.contains("aliases = [\"coder\", \"gpt-4o\"]"));
+}

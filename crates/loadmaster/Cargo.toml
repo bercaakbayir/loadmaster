@@ -33,6 +33,9 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
@@ -40,5 +43,7 @@ tracing-subscriber.workspace = true
 workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
+reqwest.workspace = true
 insta.workspace = true
 tempfile.workspace = true

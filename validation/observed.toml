@@ -1,0 +1,103 @@
+# Buffer sizes reported by llama.cpp (MiB) for real runs, used to check the planner.
+# Each [[model]] names a file by sha256; a run lists the flags and what llama.cpp logged
+# ("model buffer", "KV buffer", "compute buffer"; summed per device).
+# Replay: cargo test -p loadmaster-plan --test observed -- --ignored --nocapture
+
+[[model]]
+name = "Llama 3.2 1B Instruct Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+# Where it may be on disk; the first existing path is used.
+paths = ["~/.ollama/models/blobs/sha256-74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"]
+llama_cpp = "0.7.0 (build 11669, commit 620d2225c), Homebrew"
+device = "Apple M2, 8 GB, Metal"
+observed_on = "2026-10-18"
+
+[[model.run]]
+args = { ctx = 4096, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 128, compute = 68.01 }
+cpu = { model = 266.16, kv = 0, compute = 20.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 256, compute = 72.01 }
+cpu = { model = 266.16, kv = 0, compute = 24.02 }
+
+[[model.run]]
+args = { ctx = 16384, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 512, compute = 80.01 }
+cpu = { model = 266.16, kv = 0, compute = 32.02 }
+
+[[model.run]]
+args = { ctx = 24576, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 768, compute = 101.35 }
+cpu = { model = 266.16, kv = 0, compute = 40.02 }
+
+[[model.run]]
+args = { ctx = 32768, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 1024, compute = 125.36 }
+cpu = { model = 266.16, kv = 0, compute = 48.02 }
+
+[[model.run]]
+args = { ctx = 49152, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 1536, compute = 173.37 }
+cpu = { model = 266.16, kv = 0, compute = 64.02 }
+
+[[model.run]]
+args = { ctx = 65536, ubatch = 512, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 2048, compute = 221.39 }
+cpu = { model = 266.16, kv = 0, compute = 80.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 256, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 256, compute = 39.29 }
+cpu = { model = 266.16, kv = 0, compute = 12.01 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 1024, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 256, compute = 144.03 }
+cpu = { model = 266.16, kv = 0, compute = 48.04 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 2048, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 256, compute = 288.05 }
+cpu = { model = 266.16, kv = 0, compute = 96.07 }
+
+[[model.run]]
+args = { ctx = 32768, ubatch = 2048, flash_attn = true, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 1024, compute = 384.05 }
+cpu = { model = 266.16, kv = 0, compute = 192.07 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = false, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 256, compute = 546.01 }
+cpu = { model = 266.16, kv = 0, compute = 34.01 }
+
+[[model.run]]
+args = { ctx = 32768, ubatch = 512, flash_attn = false, ngl = 17, kv = "f16" }
+gpu = { model = 1252.41, kv = 1024, compute = 2130.01 }
+cpu = { model = 266.16, kv = 0, compute = 82.01 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 17, kv = "q8_0" }
+gpu = { model = 1252.41, kv = 136, compute = 72.04 }
+cpu = { model = 266.16, kv = 0, compute = 24.05 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 16, kv = "f16" }
+gpu = { model = 1190.78, kv = 240, compute = 64.01 }
+cpu = { model = 327.79, kv = 16, compute = 76.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 8, kv = "f16" }
+gpu = { model = 697.65, kv = 112, compute = 64.01 }
+cpu = { model = 820.95, kv = 144, compute = 76.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 1, kv = "f16" }
+gpu = { model = 266.17, kv = 0, compute = 0.5 }
+cpu = { model = 1252.16, kv = 256, compute = 76.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 0, kv = "f16" }
+gpu = { model = 0, kv = 0, compute = 0 }
+cpu = { model = 1518.32, kv = 256, compute = 76.02 }

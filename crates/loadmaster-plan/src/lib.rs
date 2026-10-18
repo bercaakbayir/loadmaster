@@ -399,12 +399,16 @@ pub fn plan(
                 .find_map(|ngl| at(ngl).filter(|c| s.fits(c)))
                 .or_else(|| at(0));
             if let Some(c) = c {
-                let ngl = c.placement.n_gpu_layers;
-                st.consider(
-                    &s,
-                    format!("{ngl}/{n_layer} layers on GPU, {} KV", kv.flag()),
-                    c,
-                );
+                let label = if c.placement.output_on_gpu(n_layer) {
+                    format!(
+                        "{}/{n_layer} layers + output head on GPU, {} KV",
+                        c.placement.gpu_layer_count(n_layer),
+                        kv.flag()
+                    )
+                } else {
+                    format!("everything on CPU, {} KV", kv.flag())
+                };
+                st.consider(&s, label, c);
             }
         }
     }

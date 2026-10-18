@@ -12,7 +12,7 @@ WEIGHT   Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE
   weights on CPU       7.44 GiB   token embeddings + routed experts
   host total           7.44 GiB   of 24.00 GiB available host memory
 
-BALANCE  all 48 layers on GPU, routed experts of the first 23 on CPU
+BALANCE  all 48 layers and the output head on GPU, routed experts of the first 23 on CPU
   ctx 32768: requested with --ctx
   KV cache q8_0: nothing fits with every layer on GPU; offloading keeps q8_0 because quantising the cache further costs quality, offloading only speed
   flash attention on: required for a quantised V cache and smaller compute buffers

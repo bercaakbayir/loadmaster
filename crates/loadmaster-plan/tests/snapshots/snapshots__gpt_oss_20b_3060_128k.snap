@@ -12,7 +12,7 @@ WEIGHT   Gpt Oss 20b · gpt-oss · MXFP4_MOE · 24 layers · MoE
   weights on CPU       2.55 GiB   token embeddings + routed experts
   host total           2.55 GiB   of 24.00 GiB available host memory
 
-BALANCE  all 24 layers on GPU, routed experts of the first 5 on CPU
+BALANCE  all 24 layers and the output head on GPU, routed experts of the first 5 on CPU
   ctx 131072: requested with --ctx
   KV cache q8_0: nothing fits with every layer on GPU; offloading keeps q8_0 because quantising the cache further costs quality, offloading only speed
   flash attention on: required for a quantised V cache and smaller compute buffers

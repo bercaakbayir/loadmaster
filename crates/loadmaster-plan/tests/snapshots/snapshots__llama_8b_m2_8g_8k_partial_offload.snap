@@ -3,17 +3,17 @@ source: crates/loadmaster-plan/tests/snapshots.rs
 expression: "render(LLAMA_8B, FakeHw::m2_8g(), Some(8192), None)"
 ---
 WEIGHT   Meta Llama 3.1 8B Instruct · llama · Q4_K_M · 32 layers
-  weights              2.98 GiB   23/32 layers; output head on CPU; token embeddings 0.28 GiB stay on CPU
-  KV cache             0.38 GiB   q8_0: 23 layers x 8192 cells x (K 1024 + V 1024) x 34/32 B
+  weights              2.99 GiB   20/32 layers + output head 0.40 GiB; token embeddings 0.28 GiB stay on CPU
+  KV cache             0.33 GiB   q8_0: 20 layers x 8192 cells x (K 1024 + V 1024) x 34/32 B
   compute buffer       0.38 GiB   n_ubatch 512 x (n_embd 4096 + n_vocab 128256) x 4 B + 128 MiB, flash attention
   headroom             1.50 GiB   macOS and display on unified memory (default 1536 MiB)
   ------------------------------
-  GPU total            5.24 GiB   of 5.33 GiB usable on Apple M2 (Metal working-set default, 2/3 of RAM (estimated))
-  weights on CPU       1.84 GiB   token embeddings + 9 layers + output head
-  KV on CPU            0.15 GiB   KV of 9 CPU layers
-  host total           1.99 GiB   of 4.00 GiB available host memory
+  GPU total            5.20 GiB   of 5.33 GiB usable on Apple M2 (Metal working-set default, 2/3 of RAM (estimated))
+  weights on CPU       1.83 GiB   token embeddings + 12 layers
+  KV on CPU            0.20 GiB   KV of 12 CPU layers
+  host total           2.03 GiB   of 4.00 GiB available host memory
 
-BALANCE  23/32 layers on GPU, the rest and the output head on CPU
+BALANCE  20/32 layers and the output head on GPU, the rest on CPU
   ctx 8192: requested with --ctx
   KV cache q8_0: nothing fits with every layer on GPU; offloading keeps q8_0 because quantising the cache further costs quality, offloading only speed
   flash attention on: required for a quantised V cache and smaller compute buffers
@@ -21,8 +21,8 @@ BALANCE  23/32 layers on GPU, the rest and the output head on CPU
     over all layers on GPU, f16 KV                          GPU    7.42 GiB  host    0.28 GiB
     over all layers on GPU, q8_0 KV                         GPU    6.95 GiB  host    0.28 GiB
     over all layers on GPU, q4_0 KV                         GPU    6.70 GiB  host    0.28 GiB
-    fits 23/32 layers on GPU, q8_0 KV                       GPU    5.24 GiB  host    1.99 GiB
+    fits 20/32 layers + output head on GPU, q8_0 KV         GPU    5.20 GiB  host    2.03 GiB
   warning: unified memory: this needs 5.73 GiB but only 4.00 GiB of RAM is free now; macOS will page other apps out
 
 COMMAND
-  llama-server -m fixtures/gguf/llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 8192 -ngl 23 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+  llama-server -m fixtures/gguf/llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 8192 -ngl 21 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

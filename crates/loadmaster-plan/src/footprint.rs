@@ -63,22 +63,22 @@ impl Placement {
         }
     }
 
-    /// llama.cpp offloads the *last* `-ngl` repeating layers.
+    /// llama.cpp counts the output head as one of the `-ngl` layers and offloads it first,
+    /// then the *last* `ngl - 1` repeating layers (observed: ADR 0004).
     pub fn layer_on_gpu(&self, il: u32, n_layer: u32) -> bool {
-        il >= n_layer.saturating_sub(self.n_gpu_layers)
+        il >= (n_layer + 1).saturating_sub(self.n_gpu_layers)
     }
 
-    /// The output head is offloaded only when `-ngl` exceeds the layer count.
-    pub fn output_on_gpu(&self, n_layer: u32) -> bool {
-        self.n_gpu_layers > n_layer
+    pub fn output_on_gpu(&self, _n_layer: u32) -> bool {
+        self.n_gpu_layers >= 1
     }
 
     pub fn gpu_layer_count(&self, n_layer: u32) -> u32 {
-        self.n_gpu_layers.min(n_layer)
+        self.n_gpu_layers.saturating_sub(1).min(n_layer)
     }
 
     pub fn is_full(&self, n_layer: u32) -> bool {
-        self.output_on_gpu(n_layer) && self.n_cpu_moe == 0
+        self.gpu_layer_count(n_layer) == n_layer && self.n_cpu_moe == 0
     }
 }
 
@@ -270,7 +270,15 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             bytes: kv_gpu,
             detail: kv_detail(model, cfg, gpu_layers),
         },
-        compute_buffer(model, cfg),
+        if gpu_layers > 0 {
+            compute_buffer(model, cfg)
+        } else {
+            Term {
+                key: "compute",
+                bytes: 0,
+                detail: "no layers on GPU".into(),
+            }
+        },
     ];
     gpu.extend(mmproj(model));
     gpu.push(Term {
@@ -426,17 +434,19 @@ mod tests {
 
     #[test]
     fn placement_offloads_last_layers() {
+        // -ngl 3 on 4 layers: output head + the last 2 layers.
         let p = Placement {
-            n_gpu_layers: 2,
+            n_gpu_layers: 3,
             n_cpu_moe: 0,
         };
         let on: Vec<bool> = (0..4).map(|il| p.layer_on_gpu(il, 4)).collect();
         assert_eq!(on, [false, false, true, true]);
-        assert!(!p.output_on_gpu(4));
-        assert!(Placement::full(4).output_on_gpu(4));
+        assert!(p.output_on_gpu(4));
+        assert_eq!(p.gpu_layer_count(4), 2);
+        assert!(Placement::full(4).is_full(4));
         assert!(
             !Placement {
-                n_gpu_layers: 4,
+                n_gpu_layers: 0,
                 n_cpu_moe: 0
             }
             .output_on_gpu(4)

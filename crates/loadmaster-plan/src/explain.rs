@@ -45,23 +45,21 @@ fn terms(out: &mut String, terms: &[Term]) {
 fn placement_line(p: &Plan) -> String {
     let n = p.model.n_layer;
     let pl = &p.placement;
-    if pl.is_full(n) {
-        format!("all {n} layers and the output head on GPU")
-    } else if pl.output_on_gpu(n) {
+    let layers = pl.gpu_layer_count(n);
+    let experts = if pl.n_cpu_moe > 0 {
         format!(
-            "all {n} layers on GPU, routed experts of the first {} on CPU",
-            pl.n_cpu_moe
+            ", routed experts of the first {} on CPU",
+            pl.n_cpu_moe.min(n)
         )
     } else {
-        format!(
-            "{}/{n} layers on GPU, the rest and the output head on CPU{}",
-            pl.gpu_layer_count(n),
-            if pl.n_cpu_moe > 0 {
-                ", routed experts on CPU"
-            } else {
-                ""
-            }
-        )
+        String::new()
+    };
+    if !pl.output_on_gpu(n) {
+        "everything on CPU".to_owned()
+    } else if layers == n {
+        format!("all {n} layers and the output head on GPU{experts}")
+    } else {
+        format!("{layers}/{n} layers and the output head on GPU, the rest on CPU{experts}")
     }
 }
 

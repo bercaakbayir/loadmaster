@@ -7,15 +7,23 @@ loadmaster follows llama.cpp, because the goal is to predict what `llama-server`
 
 ## Placement (`llama_model::load_tensors`)
 
-- `-ngl N` offloads the **last** `min(N, n_layer)` repeating layers.
+- `-ngl N` counts the output head as a layer and offloads it first: the output head and
+  final norm go to the GPU whenever `N >= 1`, plus the **last** `min(N - 1, n_layer)`
+  repeating layers. Full offload is `-ngl n_layer+1`. (Amended 2026-10-18: the first version
+  of this ADR, written from memory of the source, said the head moves only when
+  `N > n_layer`; observed runs at `-ngl 1, 8, 16` on llama.cpp build 11669 disproved it.)
 - Token embeddings (`token_embd*`) always stay on the CPU, whatever `-ngl` is. (§7 says
-  "unless -ngl covers all layers".)
-- The output head and final norm go to the GPU only when `N > n_layer`; full offload is
-  emitted as `-ngl n_layer+1`. (§7 says "whenever any layer does".)
+  "unless -ngl covers all layers"; observed `CPU_Mapped` 266 MiB at every `-ngl`.)
 - A tied output head (no `output.weight`) is loaded as a second copy of `token_embd` on the
   output device, so its bytes count on the GPU.
 - `--n-cpu-moe k` keeps the routed-expert tensors (`*_exps*`) of layers `0..k` on the CPU.
 - KV cache rows live on the device of their layer.
+
+## Verification
+
+`validation/observed.toml` records buffer sizes llama.cpp reported for real runs; the
+`observed` test in `loadmaster-plan` replays them. As of 2026-10-18 (18 runs, one model,
+Metal) weights and KV match to within 0.3 MiB on both devices, at `-ngl` 0, 1, 8, 16, 17.
 
 ## Terms
 
@@ -26,7 +34,11 @@ loadmaster follows llama.cpp, because the goal is to predict what `llama-server`
   conservative if the runtime keeps V as a view of K; validation decides.
 - **Compute buffer**: uses `n_ubatch` (default 512), not `n_batch`, because llama.cpp sizes
   its graph per ubatch. Without flash attention the attention scores are f32 (4 B), not 2 B.
-  Flash attention is always emitted `on` for llama.cpp.
+  Flash attention is always emitted `on` for llama.cpp. When no layer is on the GPU the
+  GPU compute buffer is ~0 (observed 0.5 MiB at `-ngl 1`).
+  **Known to be 3-5x too high** on Metal (Llama 3.2 1B: planned 382 MiB, observed 68-221
+  MiB with flash attention). Pending a formula fitted on more models; see
+  `validation/observed.toml`.
 - **Headroom** is part of the footprint `F`. `F` is compared with `usable` (NVML `free`, or
   the Metal working set), so headroom is subtracted exactly once. (§7 subtracts it from both
   sides.)

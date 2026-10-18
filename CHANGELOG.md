@@ -29,3 +29,11 @@ All notable changes to this project are documented here. The format follows
 - `loadmaster gpu [--json]` and `loadmaster plan <model.gguf> [--gpu] [--ctx] [--explain] [--json]`
   for llama.cpp. Exit codes: 0 fits, 1 cannot fit, 2 error. A unified-memory warning when RAM
   free right now is below what the plan needs.
+
+### Fixed
+- `-ngl` placement: llama.cpp offloads the output head first, then the last `ngl - 1`
+  layers. Partial-offload plans were one layer off.
+
+### Added
+- `validation/observed.toml`: buffer sizes llama.cpp reported for 18 runs of Llama 3.2 1B on
+  an M2, replayed by an ignored test. Weights and KV match within 0.3 MiB.

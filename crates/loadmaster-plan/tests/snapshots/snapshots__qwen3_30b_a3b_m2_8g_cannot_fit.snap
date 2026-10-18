@@ -19,4 +19,4 @@ BALANCE  tried:
     over all layers on GPU, q8_0 KV                         GPU   18.28 GiB  host    0.16 GiB
     over all layers on GPU, q4_0 KV                         GPU   18.09 GiB  host    0.16 GiB
     over experts of first 48/48 layers on CPU, q8_0 KV      GPU    3.09 GiB  host   15.35 GiB
-    over 0/48 layers on GPU, q8_0 KV                        GPU    1.92 GiB  host   16.52 GiB
+    over everything on CPU, q8_0 KV                         GPU    1.50 GiB  host   16.52 GiB

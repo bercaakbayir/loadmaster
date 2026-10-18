@@ -79,3 +79,10 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - macOS available memory is `kern.memorystatus_level` x RAM (the kernel's own figure),
   not vm_stat's free + inactive, which refused runs that work (ADR 0005, amended).
+- `loadmaster-lock`: `models.lock` schema (spec §5 plus `load_timeout_s`, `mmproj`, `env`,
+  per-model `idle_unload_s`), unknown keys rejected, every problem reported at once,
+  canonical writer that round-trips byte for byte (proptest), versioning, diff, entries from
+  plans with machine-specific arguments stripped.
+- llama-swap importer: macros (global, per-model, `${env.X}`, `${MODEL_ID}`), multi-line
+  `cmd` with comments, `llama-server` and `vllm serve`, aliases, `ttl`, `globalTTL`, `env`;
+  containers and unknown servers skipped with a reason, unsupported settings reported.

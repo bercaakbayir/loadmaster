@@ -1,0 +1,5 @@
+# minimum viable config.yaml
+
+models:
+  model1:
+    cmd: llama-server --port ${PORT} --model /path/to/model.gguf

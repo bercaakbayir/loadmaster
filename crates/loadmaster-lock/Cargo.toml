@@ -11,6 +11,16 @@ authors.workspace = true
 [dependencies]
 loadmaster-model.workspace = true
 loadmaster-plan.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+yaml-rust2.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+loadmaster-hw.workspace = true
+loadmaster-model.workspace = true
+proptest.workspace = true
+insta.workspace = true

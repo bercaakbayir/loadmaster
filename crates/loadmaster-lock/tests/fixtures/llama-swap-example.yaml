@@ -1,0 +1,49 @@
+# Excerpt of llama-swap docs/config.example.yaml (MIT License, (c) mostlygeek),
+# global settings, macros and the `models` entries, comments removed.
+healthCheckTimeout: 500
+logLevel: info
+startPort: 10001
+globalTTL: 0
+unloadTimeout: 10
+macros:
+  "latest-llama": >
+    /path/to/llama-server/llama-server-ec9e0301 --port ${PORT}
+  "default_ctx": 4096
+  "default_args": "--ctx-size ${default_ctx}"
+  "models_dir": "${env.HOME}/models"
+apiKeys:
+  - "sk-hunter2"
+models:
+  "gpt-oss-120b":
+    macros:
+      "default_ctx": 16384
+      "temp": 0.7
+    cmd: |
+      ${latest-llama}
+      --model path/to/gpt-oss-120B.gguf
+      --ctx-size ${default_ctx}
+      --temperature ${temp}
+    name: "gpt-oss 120B"
+    description: "A thinking model from OpenAI"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0,1,2"
+    proxy: http://127.0.0.1:8999
+    checkEndpoint: /custom-endpoint
+    ttl: 60
+    unloadTimeout: 10
+    useModelName: "openai/gpt-oss-120B"
+    filters:
+      stripParams: "temperature, top_p, top_k"
+    aliases:
+      - "gpt-4o-mini"
+  "unlisted-model":
+    unlisted: true
+    cmd: some-upstream-server
+  "docker-llama":
+    proxy: "http://127.0.0.1:${PORT}"
+    cmd: |
+      docker run --name ${MODEL_ID}
+      --init --rm -p ${PORT}:8080 -v /mnt/nvme/models:/models
+      ghcr.io/ggml-org/llama.cpp:server
+      --model '/models/Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf'
+    cmdStop: docker stop ${MODEL_ID}

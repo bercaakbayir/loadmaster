@@ -1,0 +1,36 @@
+---
+source: crates/loadmaster-lock/tests/lockfile.rs
+expression: text
+---
+# models.lock, written by loadmaster. Commit it. Plan-derived fields (ctx, footprint_gb,
+# flags) are frozen; change them with `loadmaster plan --update <name>`.
+version = 1
+
+[host]
+gpu = "NVIDIA GeForce RTX 4090"
+vram_gb = 24.0
+headroom_gb = 0.78
+
+[proxy]
+listen = "127.0.0.1:8080"
+idle_unload_s = 600
+load_timeout_s = 300
+
+[[model]]
+name = "qwen3-coder"
+source = "hf://unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+sha256 = "abababababababababababababababababababababababababababababababab"
+runtime = "llama.cpp"
+runtime_bin = "llama-server"
+ctx = 65536
+footprint_gb = 21.4
+flags = ["-ngl", "49", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "--jinja"]
+keep_warm = true
+aliases = ["gpt-4o", "coder"]
+
+[model.verify]
+probe_version = "0.3.0"
+verdict = "partial"
+failures = ["parallel_in_content"]
+runtime_version = "llama.cpp b6700"
+checked_at = "2026-12-01T10:00:00Z"

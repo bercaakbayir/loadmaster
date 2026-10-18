@@ -431,6 +431,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "insta",
  "loadmaster-hw",
  "loadmaster-lock",
  "loadmaster-model",
@@ -438,6 +439,9 @@ dependencies = [
  "loadmaster-probe",
  "loadmaster-serve",
  "loadmaster-store",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]

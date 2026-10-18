@@ -1,9 +1,11 @@
 //! `loadmaster` CLI. Subcommands delegate to the library crates.
 
+mod cmd;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "loadmaster", version, about, propagate_version = true)]
@@ -30,25 +32,40 @@ enum Command {
     Gpu {
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        hw: HwArgs,
     },
     /// Compute the memory budget and the exact launch command for a model.
-    Plan {
-        /// Model path, `hf://repo/file`, or a name from `scan`.
-        model: String,
-        /// `auto` or a GPU name from `loadmaster gpu`.
-        #[arg(long, default_value = "auto")]
-        gpu: String,
-        /// Context length in tokens.
-        #[arg(long)]
-        ctx: Option<u32>,
-        #[arg(long, value_enum, default_value_t = Runtime::LlamaCpp)]
-        runtime: Runtime,
-        /// Print every term of the footprint and why each choice was made.
-        #[arg(long)]
-        explain: bool,
-        #[arg(long)]
-        json: bool,
-    },
+    Plan(PlanArgs),
+}
+
+#[derive(Args)]
+struct HwArgs {
+    /// Read the hardware snapshot from a file (as written by `loadmaster gpu --json`)
+    /// instead of detecting it. For reproducing plans and bug reports.
+    #[arg(long, hide = true, global = true)]
+    hw_file: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct PlanArgs {
+    /// Path to a .gguf model file (for split models, any part).
+    model: PathBuf,
+    /// `auto`, a GPU index, or part of a GPU name from `loadmaster gpu`.
+    #[arg(long, default_value = "auto")]
+    gpu: String,
+    /// Context length in tokens. Default: the largest that fits fully on the GPU.
+    #[arg(long)]
+    ctx: Option<u32>,
+    #[arg(long, value_enum, default_value_t = Runtime::LlamaCpp)]
+    runtime: Runtime,
+    /// Print every term of the footprint and why each choice was made.
+    #[arg(long)]
+    explain: bool,
+    #[arg(long, conflicts_with = "explain")]
+    json: bool,
+    #[command(flatten)]
+    hw: HwArgs,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -59,6 +76,16 @@ enum Runtime {
     Exl3,
 }
 
+impl From<Runtime> for loadmaster_plan::Runtime {
+    fn from(r: Runtime) -> Self {
+        match r {
+            Runtime::LlamaCpp => loadmaster_plan::Runtime::LlamaCpp,
+            Runtime::Vllm => loadmaster_plan::Runtime::Vllm,
+            Runtime::Exl3 => loadmaster_plan::Runtime::Exl3,
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
@@ -66,7 +93,7 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(err) => {
             eprintln!("error: {err:#}");
-            ExitCode::FAILURE
+            ExitCode::from(2)
         }
     }
 }
@@ -87,8 +114,10 @@ fn init_tracing(verbose: u8) {
 
 fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
-        Command::Scan { .. } | Command::Gpu { .. } | Command::Plan { .. } => {
-            anyhow::bail!("not implemented yet; see CHANGELOG.md for what has shipped")
+        Command::Scan { .. } => {
+            anyhow::bail!("`scan` is not implemented yet; pass a model path to `loadmaster plan`")
         }
+        Command::Gpu { json, hw } => cmd::gpu::run(json, hw.hw_file.as_deref()),
+        Command::Plan(args) => cmd::plan::run(args),
     }
 }

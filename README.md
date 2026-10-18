@@ -4,7 +4,18 @@
 it, and does it actually emit tool calls?** loadmaster answers all three for local LLMs, from the
 real model file, with every number shown.
 
-> Status: pre-release. Nothing below is usable yet; see [CHANGELOG.md](CHANGELOG.md).
+> Status: pre-release. `loadmaster gpu` and `loadmaster plan <file.gguf>` work for llama.cpp;
+> the numbers are not yet validated against real runs. See [CHANGELOG.md](CHANGELOG.md).
+
+```console
+$ loadmaster plan Qwen3-30B-A3B-Q4_K_M.gguf --ctx 32768
+Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE  ·  ctx 32768
+fits: 11.48 GiB of 11.74 GiB usable on NVIDIA GeForce RTX 3060; all 48 layers on GPU, routed experts of the first 23 on CPU, q8_0 KV
+
+llama-server -m Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 49 --n-cpu-moe 23 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+```
+
+Add `--explain` to see every term of the budget and every configuration that was tried.
 
 ## Why "loadmaster"?
 

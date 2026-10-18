@@ -7,7 +7,7 @@ pub mod emit;
 pub mod explain;
 pub mod footprint;
 
-use loadmaster_hw::{Gpu, Host, HwSnapshot, MIB, Vendor};
+use loadmaster_hw::{Gpu, Host, HwSnapshot, MIB, MemoryKind, Vendor};
 use loadmaster_model::ModelInfo;
 use serde::Serialize;
 
@@ -424,6 +424,16 @@ pub fn plan(
         warnings.push(
             "q4_0 KV cache measurably lowers output quality; consider a smaller --ctx or a smaller quant".into(),
         );
+    }
+    if gpu.memory == MemoryKind::Unified {
+        let needed = c.fp.gpu_bytes.saturating_sub(c.cfg.headroom.bytes) + c.fp.host_bytes;
+        if hw.host.available_bytes > 0 && needed > hw.host.available_bytes {
+            warnings.push(format!(
+                "unified memory: this needs {} but only {} of RAM is free now; macOS will page other apps out",
+                gib(needed),
+                gib(hw.host.available_bytes)
+            ));
+        }
     }
     let mut plan = Plan {
         model: summary(model),

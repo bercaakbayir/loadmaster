@@ -26,3 +26,6 @@ All notable changes to this project are documented here. The format follows
   headroom) with per-term explanations; f16 → q8_0 → q4_0 KV selection; MoE expert offload
   and layer offload search; `CannotFit` with the closest miss and two fixes; default-context
   search; `llama-server` command emitter; `--explain` renderer (ADR 0004).
+- `loadmaster gpu [--json]` and `loadmaster plan <model.gguf> [--gpu] [--ctx] [--explain] [--json]`
+  for llama.cpp. Exit codes: 0 fits, 1 cannot fit, 2 error. A unified-memory warning when RAM
+  free right now is below what the plan needs.

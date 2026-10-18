@@ -22,6 +22,7 @@ BALANCE  23/32 layers on GPU, the rest and the output head on CPU
     over all layers on GPU, q8_0 KV                         GPU    6.95 GiB  host    0.28 GiB
     over all layers on GPU, q4_0 KV                         GPU    6.70 GiB  host    0.28 GiB
     fits 23/32 layers on GPU, q8_0 KV                       GPU    5.24 GiB  host    1.99 GiB
+  warning: unified memory: this needs 5.73 GiB but only 4.00 GiB of RAM is free now; macOS will page other apps out
 
 COMMAND
   llama-server -m fixtures/gguf/llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 8192 -ngl 23 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

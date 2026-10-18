@@ -45,13 +45,10 @@ pub async fn serve(
     let signal = {
         let shutdown = Arc::clone(&shutdown);
         async move {
-            let mut term =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("installing SIGTERM handler");
             tokio::select! {
                 _ = shutdown.notified() => {}
                 _ = tokio::signal::ctrl_c() => {}
-                _ = term.recv() => {}
+                _ = terminate() => {}
             }
         }
     };
@@ -61,4 +58,19 @@ pub async fn serve(
     reaper.abort();
     sup.shutdown().await;
     result
+}
+
+#[cfg(unix)]
+async fn terminate() {
+    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        Ok(mut term) => {
+            term.recv().await;
+        }
+        Err(_) => std::future::pending().await,
+    }
+}
+
+#[cfg(not(unix))]
+async fn terminate() {
+    std::future::pending::<()>().await
 }

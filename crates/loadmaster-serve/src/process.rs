@@ -84,8 +84,10 @@ pub async fn wait_ready(
     }
 }
 
-/// SIGTERM, then SIGKILL after `grace`.
+/// SIGTERM, then SIGKILL after `grace`. On Windows there is no graceful signal for a
+/// console child, so it is terminated directly.
 pub async fn stop(child: &mut Child, grace: Duration) {
+    #[cfg(unix)]
     if let Some(pid) = child.id() {
         let _ = nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(pid as i32),
@@ -95,6 +97,8 @@ pub async fn stop(child: &mut Child, grace: Duration) {
             return;
         }
     }
+    #[cfg(not(unix))]
+    let _ = grace;
     let _ = child.kill().await;
 }
 

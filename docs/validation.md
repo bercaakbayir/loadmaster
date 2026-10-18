@@ -22,6 +22,28 @@ every listed model (a few MB, by HTTP range request) into `validation/headers/`.
 - **No CUDA data yet.** The compute-buffer formula, headroom and NVML `free` budget are
   unvalidated on NVIDIA, as is everything about MoE compute buffers, vLLM and exl3.
 
+## Current table
+
+`cargo xtask validate --markdown`, 2026-10-18:
+
+| case | GPU | ctx | truth | loadmaster | llmfit | llama.cpp --fit |
+| --- | --- | ---: | --- | --- | --- | --- |
+| llama3.2-1b-q8_0-m2-4k-f16 | Apple M2 8 GB | 4096 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-8k-f16 | Apple M2 8 GB | 8192 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-16k-f16 | Apple M2 8 GB | 16384 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-24k-f16 | Apple M2 8 GB | 24576 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-32k-f16 | Apple M2 8 GB | 32768 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-48k-f16 | Apple M2 8 GB | 49152 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-64k-f16 | Apple M2 8 GB | 65536 | fits | fits | - | - |
+| llama3.2-1b-q8_0-m2-8k-q8_0 | Apple M2 8 GB | 8192 | fits | fits | - | - |
+| qwen3-0.6b-q4_k_m-m2-4k-f16 | Apple M2 8 GB | 4096 | fits | fits | - | - |
+| qwen3-0.6b-q4_k_m-m2-8k-f16 | Apple M2 8 GB | 8192 | fits | fits | - | - |
+| qwen3-0.6b-q4_k_m-m2-16k-f16 | Apple M2 8 GB | 16384 | fits | fits | - | - |
+| qwen3-0.6b-q4_k_m-m2-32k-f16 | Apple M2 8 GB | 32768 | fits | fits | - | - |
+| qwen3-0.6b-q4_k_m-m2-40k-f16 | Apple M2 8 GB | 40960 | oom | oom | - | - |
+
+loadmaster agrees with ground truth on 13 of 13 cases.
+
 ## Collecting a case
 
 On the machine under test, with llama.cpp and a model file:

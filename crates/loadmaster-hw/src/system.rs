@@ -128,7 +128,7 @@ fn vm_stat_available() -> Option<u64> {
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn host() -> Result<Host, Error> {
     let err = |reason: String| Error::Host {
         source_name: "/proc/meminfo",
@@ -147,6 +147,41 @@ fn host() -> Result<Host, Error> {
         total_bytes: kib("MemTotal:").ok_or_else(|| err("no MemTotal".into()))? * 1024,
         available_bytes: kib("MemAvailable:").unwrap_or(0) * 1024,
         available_basis: "/proc/meminfo MemAvailable".into(),
+    })
+}
+
+/// Windows: total and free physical memory from CIM (kilobytes).
+#[cfg(windows)]
+fn host() -> Result<Host, Error> {
+    let err = |reason: String| Error::Host {
+        source_name: "Win32_OperatingSystem",
+        reason,
+    };
+    let out = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "$o = Get-CimInstance Win32_OperatingSystem; \"$($o.TotalVisibleMemorySize) $($o.FreePhysicalMemory)\"",
+        ])
+        .output()
+        .map_err(|e| err(e.to_string()))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut it = text.split_whitespace().map(|v| v.parse::<u64>().ok());
+    match (it.next().flatten(), it.next().flatten()) {
+        (Some(total), Some(free)) => Ok(Host {
+            total_bytes: total * 1024,
+            available_bytes: free * 1024,
+            available_basis: "Win32_OperatingSystem FreePhysicalMemory".into(),
+        }),
+        _ => Err(err(format!("unexpected output `{}`", text.trim()))),
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn host() -> Result<Host, Error> {
+    Err(Error::Host {
+        source_name: "host memory",
+        reason: "not supported on this OS".into(),
     })
 }
 

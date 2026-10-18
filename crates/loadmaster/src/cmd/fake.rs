@@ -13,7 +13,8 @@ use loadmaster_probe::fake::{Config, Impersonate, Misbehavior};
 pub struct FakeArgs {
     /// `--port N` (required), `--host H`, `--name ID`, `--misbehave a,b`,
     /// `--impersonate llama.cpp|vllm|ollama|lmstudio|sglang|tabbyapi`, `--load-delay SECS`.
-    /// Anything else (runtime flags such as `-m` or `-c`) is ignored.
+    /// `-m PATH` sets the reported chat template from that model file. Anything else
+    /// (runtime flags such as `-c`) is ignored.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
@@ -40,13 +41,20 @@ pub fn run(a: FakeArgs) -> anyhow::Result<ExitCode> {
         misbehave
             .insert(Misbehavior::parse(m).with_context(|| format!("unknown misbehaviour `{m}`"))?);
     }
-    let cfg = Config {
+    let mut cfg = Config {
         model: value("--name").unwrap_or("fake-model").to_owned(),
         misbehave,
         impersonate: Impersonate::parse(value("--impersonate").unwrap_or("llama.cpp"))
             .context("unknown runtime to impersonate")?,
         ..Config::default()
     };
+    // Like llama-server, report the chat template of the model file it was given.
+    if let Some(path) = value("-m").or(value("--model"))
+        && let Ok(info) = loadmaster_model::ModelInfo::open(path)
+        && let Some(t) = info.chat_template
+    {
+        cfg.chat_template = t.source;
+    }
     let delay: f64 = value("--load-delay")
         .unwrap_or("0")
         .parse()

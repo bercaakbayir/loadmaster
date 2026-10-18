@@ -8,6 +8,7 @@ use anyhow::{Context, bail};
 mod fixtures;
 mod headers;
 mod hf_fixtures;
+mod results;
 mod validate;
 
 /// Workspace crates each crate may depend on (normal and dev). Anything not listed is a
@@ -62,12 +63,32 @@ fn main() -> anyhow::Result<()> {
             fixtures::generate(&workspace_root().join("fixtures"), check)
         }
         Some("fetch-headers") => headers::fetch_all(&workspace_root()),
+        Some("results") => {
+            let root = workspace_root();
+            let args: Vec<String> = std::env::args().skip(3).collect();
+            match std::env::args().nth(2).as_deref() {
+                Some("select") => {
+                    let today = Command::new("date").args(["-u", "+%Y-%m-%d"]).output()?;
+                    results::select(&root, String::from_utf8_lossy(&today.stdout).trim())
+                }
+                Some("run") => {
+                    let lms = args
+                        .iter()
+                        .position(|a| a == "--lmstudio")
+                        .and_then(|i| args.get(i + 1));
+                    results::run(&root, lms.map(String::as_str))
+                }
+                Some("render") => results::render(&root),
+                _ => bail!("usage: cargo xtask results <select | run [--lmstudio URL] | render>"),
+            }
+        }
+        Some("publish-order") => publish_order(),
         Some("validate") => {
             let markdown = std::env::args().nth(2).as_deref() == Some("--markdown");
             validate::run(&workspace_root(), markdown)
         }
         _ => bail!(
-            "usage: cargo xtask <check-deps | gen-fixtures [--check] | fetch-headers | validate [--markdown]>"
+            "usage: cargo xtask <check-deps | gen-fixtures [--check] | fetch-headers | validate [--markdown] | results ... | publish-order>"
         ),
     }
 }
@@ -119,4 +140,46 @@ fn workspace_root() -> std::path::PathBuf {
         .parent()
         .expect("xtask lives in the workspace root")
         .to_path_buf()
+}
+
+/// Workspace crates in an order `cargo publish` accepts (dependencies first).
+fn publish_order() -> anyhow::Result<()> {
+    let out = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .output()?;
+    let meta: serde_json::Value = serde_json::from_slice(&out.stdout)?;
+    let pkgs: Vec<(String, Vec<String>)> = meta["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|p| p["name"] != "xtask")
+        .map(|p| {
+            let deps = p["dependencies"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|d| d["kind"].is_null())
+                .filter_map(|d| d["name"].as_str())
+                .filter(|n| n.starts_with("loadmaster"))
+                .map(str::to_owned)
+                .collect();
+            (p["name"].as_str().unwrap_or_default().to_owned(), deps)
+        })
+        .collect();
+    let mut done: Vec<String> = Vec::new();
+    while done.len() < pkgs.len() {
+        let before = done.len();
+        for (name, deps) in &pkgs {
+            if !done.contains(name) && deps.iter().all(|d| done.contains(d)) {
+                done.push(name.clone());
+            }
+        }
+        if done.len() == before {
+            bail!("dependency cycle among workspace crates");
+        }
+    }
+    for n in done {
+        println!("{n}");
+    }
+    Ok(())
 }

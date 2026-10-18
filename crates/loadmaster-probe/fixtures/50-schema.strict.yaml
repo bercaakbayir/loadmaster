@@ -1,0 +1,33 @@
+id: schema.strict
+description: response_format json_schema with strict true and a nested object. The output validates.
+core: true
+steps:
+  - body:
+      messages:
+        - { role: user, content: "Extract the person: Maria Lopez, 34, lives in Lyon, postcode 69001." }
+      response_format:
+        type: json_schema
+        json_schema:
+          name: person
+          strict: true
+          schema: &person
+            type: object
+            additionalProperties: false
+            required: [name, age, address]
+            properties:
+              name: { type: string }
+              age: { type: integer }
+              address:
+                type: object
+                additionalProperties: false
+                required: [city, zip]
+                properties: { city: { type: string }, zip: { type: string } }
+pass:
+  all:
+    - { status: 200 }
+    - { path: "$.choices[0].message.content", parse: true, schema: *person }
+fail:
+  - class: schema_rejected
+    if: { status_class: 4 }
+  - class: schema_dropped_silent
+    if: { status: 200 }

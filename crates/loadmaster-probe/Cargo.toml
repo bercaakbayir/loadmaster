@@ -16,6 +16,7 @@ futures-util.workspace = true
 jsonschema.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
+toml.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_json_path.workspace = true

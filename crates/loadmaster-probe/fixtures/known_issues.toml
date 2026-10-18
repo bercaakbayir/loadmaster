@@ -1,0 +1,12 @@
+# Known upstream issues, matched against probe failures. When a failure class (and,
+# optionally, runtime and model) matches, `loadmaster probe` prints the URL.
+#
+# [[issue]]
+# failure = "call_in_content"          # a failure class from the fixtures
+# runtime = "llama.cpp"                # optional: llama.cpp | vllm | ollama | lmstudio | sglang | tabbyapi
+# model = "qwen3"                      # optional: case-insensitive substring of the model name
+# url = "https://github.com/..."       # the upstream issue
+# note = "one line on cause and workaround"
+#
+# Every entry must link a real issue that reproduces the signature. The list starts empty:
+# entries are added from probe runs (see RESULTS.md) as signatures are confirmed upstream.

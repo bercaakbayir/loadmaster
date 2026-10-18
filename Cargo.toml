@@ -4,7 +4,7 @@ members = ["crates/*", "xtask"]
 default-members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -12,13 +12,13 @@ repository = "https://github.com/ratel-sh/loadmaster"
 authors = ["Berca Akbayir <berca@ratel.sh>"]
 
 [workspace.dependencies]
-loadmaster-model = { path = "crates/loadmaster-model", version = "0.0.0" }
-loadmaster-hw = { path = "crates/loadmaster-hw", version = "0.0.0" }
-loadmaster-plan = { path = "crates/loadmaster-plan", version = "0.0.0" }
-loadmaster-store = { path = "crates/loadmaster-store", version = "0.0.0" }
-loadmaster-lock = { path = "crates/loadmaster-lock", version = "0.0.0" }
-loadmaster-serve = { path = "crates/loadmaster-serve", version = "0.0.0" }
-loadmaster-probe = { path = "crates/loadmaster-probe", version = "0.0.0" }
+loadmaster-model = { path = "crates/loadmaster-model", version = "0.3.0" }
+loadmaster-hw = { path = "crates/loadmaster-hw", version = "0.3.0" }
+loadmaster-plan = { path = "crates/loadmaster-plan", version = "0.3.0" }
+loadmaster-store = { path = "crates/loadmaster-store", version = "0.3.0" }
+loadmaster-lock = { path = "crates/loadmaster-lock", version = "0.3.0" }
+loadmaster-serve = { path = "crates/loadmaster-serve", version = "0.3.0" }
+loadmaster-probe = { path = "crates/loadmaster-probe", version = "0.3.0" }
 
 # See docs/decisions/0002-dependencies.md before adding or substituting.
 anyhow = "1.0"

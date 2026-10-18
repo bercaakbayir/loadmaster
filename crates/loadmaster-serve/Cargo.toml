@@ -13,7 +13,6 @@ loadmaster-lock.workspace = true
 loadmaster-hw.workspace = true
 axum.workspace = true
 futures-util.workspace = true
-nix.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,6 +22,9 @@ tracing.workspace = true
 
 [lints]
 workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

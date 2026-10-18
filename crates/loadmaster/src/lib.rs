@@ -63,6 +63,9 @@ enum Command {
     /// Convert another tool's config into models.lock.
     #[command(subcommand)]
     Import(ImportCmd),
+    /// Does tool calling and structured output work on this endpoint? Exit 0 pass,
+    /// 1 partial, 2 fail.
+    Probe(ProbeArgs),
     /// A fake OpenAI-compatible runtime for tests.
     #[command(name = "__fake-runtime", hide = true)]
     FakeRuntime(cmd::fake::FakeArgs),
@@ -81,6 +84,59 @@ enum ImportCmd {
         #[command(flatten)]
         hw: HwArgs,
     },
+}
+
+#[derive(Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
+struct ProbeArgs {
+    /// OpenAI-compatible base URL, e.g. http://127.0.0.1:8080
+    #[arg(required = true)]
+    url: Option<String>,
+    /// Model name to send.
+    #[arg(long, required = true)]
+    model: Option<String>,
+    #[arg(long)]
+    json: bool,
+    /// Run the fixtures in this directory instead of the built-in ones.
+    #[arg(long)]
+    fixtures: Option<PathBuf>,
+    /// Only these fixture ids (comma-separated).
+    #[arg(long, value_delimiter = ',')]
+    only: Vec<String>,
+    /// Runs per fixture (default 3; all must agree).
+    #[arg(long)]
+    repeat: Option<u32>,
+    /// blake3 of the chat template the endpoint should be using.
+    #[arg(long)]
+    expect_template: Option<String>,
+    /// Extra known-issue signatures (TOML), on top of the built-in list.
+    #[arg(long)]
+    known_issues: Option<PathBuf>,
+    /// Environment variable holding an API key to send as a bearer token.
+    #[arg(long)]
+    api_key_env: Option<String>,
+    #[command(subcommand)]
+    sub: Option<ProbeCmd>,
+}
+
+#[derive(Subcommand)]
+enum ProbeCmd {
+    /// Run a JSONL prompts file against models; results go to ~/.loadmaster/eval.db.
+    Eval {
+        prompts: PathBuf,
+        /// Models to run (repeatable).
+        #[arg(long = "model", required = true)]
+        models: Vec<String>,
+        /// Endpoint (default: the proxy in models.lock).
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long, default_value = loadmaster_lock::FILE_NAME)]
+        lock: PathBuf,
+        #[arg(long)]
+        api_key_env: Option<String>,
+    },
+    /// Compare two eval runs by id.
+    Compare { a: i64, b: i64 },
 }
 
 #[derive(Args, Clone)]
@@ -213,7 +269,8 @@ pub fn main() -> ExitCode {
         Ok(code) => code,
         Err(err) => {
             eprintln!("error: {err:#}");
-            ExitCode::from(2)
+            // 0-2 are results (fits/partial/fail); 3 is "could not answer".
+            ExitCode::from(3)
         }
     }
 }
@@ -250,6 +307,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             lock,
             hw,
         }) => cmd::import::llama_swap(&config, &lock.lock, force, hw.hw_file.as_deref()),
+        Command::Probe(args) => cmd::probe::run(args),
         Command::FakeRuntime(args) => cmd::fake::run(args),
     }
 }

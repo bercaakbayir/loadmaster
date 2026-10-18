@@ -1,0 +1,46 @@
+id: tool.nested
+description: A tool with nested object and array parameters. Arguments validate against the schema.
+steps:
+  - body:
+      messages:
+        - { role: user, content: "Create a meeting called 'Q3 planning' in Berlin, room 4.12, with Ana (ana@example.com) and Ben (ben@example.com). Use the tool." }
+      tools:
+        - type: function
+          function:
+            name: create_event
+            parameters:
+              type: object
+              required: [title, attendees, location]
+              properties:
+                title: { type: string }
+                attendees:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [name, email]
+                    properties: { name: { type: string }, email: { type: string } }
+                location:
+                  type: object
+                  required: [city, room]
+                  properties: { city: { type: string }, room: { type: string } }
+pass:
+  path: "$.choices[0].message.tool_calls[0].function.arguments"
+  parse: true
+  schema:
+    type: object
+    required: [title, attendees, location]
+    properties:
+      title: { type: string }
+      attendees:
+        type: array
+        minItems: 1
+        items: { type: object, required: [name, email], properties: { name: { type: string }, email: { type: string } } }
+      location: { type: object, required: [city, room], properties: { city: { type: string }, room: { type: string } } }
+fail:
+  - class: args_invalid_json
+    if: { path: "$.choices[0].message.tool_calls[0].function.arguments", json: false }
+  - class: schema_flattened
+    if: { path: "$.choices[0].message.tool_calls[0].function.arguments", json: true }
+  - class: no_call
+    if: { path: "$.choices[0].message.tool_calls", count: 0 }

@@ -1,0 +1,40 @@
+id: schema.enum_pattern
+description: enum and pattern constraints. The output satisfies both.
+steps:
+  - body:
+      messages:
+        - { role: user, content: "Account ABC-1234 is currently active. Return its code and status as JSON." }
+      response_format:
+        type: json_schema
+        json_schema:
+          name: account
+          strict: true
+          schema:
+            type: object
+            additionalProperties: false
+            required: [code, status]
+            properties:
+              code: { type: string, pattern: "^[A-Z]{3}-[0-9]{4}$", examples: ["ABC-1234"] }
+              status: { type: string, enum: [active, suspended, closed] }
+pass:
+  all:
+    - { status: 200 }
+    - path: "$.choices[0].message.content"
+      parse: true
+      schema:
+        type: object
+        required: [code, status]
+        properties:
+          code: { type: string, pattern: "^[A-Z]{3}-[0-9]{4}$" }
+          status: { enum: [active, suspended, closed] }
+fail:
+  - class: schema_rejected
+    if: { status_class: 4 }
+  - class: schema_dropped_silent
+    if: { path: "$.choices[0].message.content", json: false }
+  - class: enum_ignored
+    if:
+      not: { path: "$.choices[0].message.content", parse: true, schema: { properties: { status: { enum: [active, suspended, closed] } } } }
+  - class: pattern_ignored
+    if:
+      not: { path: "$.choices[0].message.content", parse: true, schema: { properties: { code: { pattern: "^[A-Z]{3}-[0-9]{4}$" } } } }

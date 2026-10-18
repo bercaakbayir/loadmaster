@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! End-to-end supervisor: `loadmaster up` with fake runtimes (`loadmaster __fake-runtime`
 //! behind wrapper scripts), driven over HTTP and through `status`/`swap`/`down`.
 

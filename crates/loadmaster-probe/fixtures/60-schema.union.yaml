@@ -1,0 +1,34 @@
+id: schema.union
+description: An anyOf of two object shapes. The output validates against one branch.
+steps:
+  - body:
+      messages:
+        - { role: user, content: "Describe a rectangle 3 wide and 2 high as JSON." }
+      response_format:
+        type: json_schema
+        json_schema:
+          name: shape
+          strict: true
+          schema: &shape
+            type: object
+            additionalProperties: false
+            required: [shape]
+            properties:
+              shape:
+                anyOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [kind, radius]
+                    properties: { kind: { const: circle }, radius: { type: number } }
+                  - type: object
+                    additionalProperties: false
+                    required: [kind, width, height]
+                    properties: { kind: { const: rectangle }, width: { type: number }, height: { type: number } }
+pass:
+  all:
+    - { status: 200 }
+    - { path: "$.choices[0].message.content", parse: true, schema: *shape }
+fail:
+  - class: schema_rejected
+    if: { status_class: 4 }
+  - class: union_unconstrained

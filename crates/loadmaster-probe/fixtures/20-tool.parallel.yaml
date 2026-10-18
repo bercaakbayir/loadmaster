@@ -1,0 +1,40 @@
+id: tool.parallel
+description: Three independent tools and a prompt needing all three. Three entries in tool_calls in one turn.
+steps:
+  - body:
+      messages:
+        - { role: system, content: "You are a helpful assistant. Call tools in parallel when calls are independent." }
+        - { role: user, content: "For Tokyo, get the current weather, the local time and the population. Call all three tools now, in one turn." }
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            parameters: { type: object, properties: { city: { type: string } }, required: [city] }
+        - type: function
+          function:
+            name: get_local_time
+            parameters: { type: object, properties: { city: { type: string } }, required: [city] }
+        - type: function
+          function:
+            name: get_population
+            parameters: { type: object, properties: { city: { type: string } }, required: [city] }
+      tool_choice: auto
+      parallel_tool_calls: true
+pass:
+  all:
+    - { path: "$.choices[0].message.tool_calls", count: 3 }
+    - { path: "$.choices[0].message.tool_calls[*].function.arguments", json: true }
+fail:
+  - class: parallel_in_content
+    if:
+      all:
+        - { path: "$.choices[0].message.tool_calls", count: 0 }
+        - { path: "$.choices[0].message.content", contains_any: ["get_weather", "get_local_time", "<tool_call>"] }
+  - class: parallel_serialised
+    if: { path: "$.choices[0].message.tool_calls", count: 1 }
+  - class: parallel_partial
+    if: { path: "$.choices[0].message.tool_calls", count: 2 }
+  - class: args_invalid_json
+    if: { path: "$.choices[0].message.tool_calls[*].function.arguments", json: false }
+  - class: no_call
+    if: { path: "$.choices[0].message.tool_calls", count: 0 }

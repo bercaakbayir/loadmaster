@@ -1,0 +1,29 @@
+id: stream.tool
+description: tool.single with stream true. Reassembled deltas equal the non-streamed call.
+steps:
+  - body: &body
+      messages:
+        - { role: user, content: "What is the weather in Paris right now? Use the tool." }
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            parameters: { type: object, properties: { location: { type: string } }, required: [location] }
+  - stream: true
+    body: *body
+pass:
+  all:
+    - { stream_done: true, exchange: 1 }
+    - { path: "1:$.choices[0].message.tool_calls", count: 1 }
+    - same: ["0:$.choices[0].message.tool_calls[0].function.name", "1:$.choices[0].message.tool_calls[0].function.name"]
+    - same: ["0:$.choices[0].message.tool_calls[0].function.arguments", "1:$.choices[0].message.tool_calls[0].function.arguments"]
+fail:
+  - class: stream_truncated
+    if: { stream_done: false, exchange: 1 }
+  - class: stream_args_split_invalid
+    if: { path: "1:$.choices[0].message.tool_calls[*].function.arguments", json: false }
+  - class: no_call
+    if:
+      any:
+        - { path: "0:$.choices[0].message.tool_calls", count: 0 }
+        - { path: "1:$.choices[0].message.tool_calls", count: 0 }

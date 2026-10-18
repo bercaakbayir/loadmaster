@@ -1,0 +1,5 @@
+id: template.hash
+description: >
+  The chat template the runtime renders with matches the model's own (from the model file).
+  A different template silently breaks tool calling.
+kind: template

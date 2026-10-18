@@ -22,8 +22,11 @@ both names.
 
 ## Windows
 
-Added in v0.3 per the spec: append `x86_64-pc-windows-msvc` to `targets` in
-`dist-workspace.toml` and run `dist generate`.
+`x86_64-pc-windows-msvc` is in `targets` (v0.3, per the spec). Unix-only pieces are gated:
+runtimes are stopped with a hard kill (no SIGTERM), the supervisor exits on Ctrl-C or
+`loadmaster down`, host memory comes from `Win32_OperatingSystem`, and the process-based
+tests are `cfg(unix)`. The `windows` CI job builds the workspace and runs the unit tests;
+nothing has been run on Windows by hand yet.
 
 ## Releasing
 

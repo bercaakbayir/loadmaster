@@ -1,0 +1,33 @@
+id: tool.result_roundtrip
+description: >
+  Call a tool, then feed a tool-role message back. The model answers with the result and
+  makes no second, spurious call.
+core: true
+steps:
+  - body:
+      messages:
+        - { role: user, content: "What is the weather in Paris right now? Use the tool." }
+      tools: &tools
+        - type: function
+          function:
+            name: get_weather
+            parameters: { type: object, properties: { location: { type: string } }, required: [location] }
+  - body:
+      messages:
+        - { role: user, content: "What is the weather in Paris right now? Use the tool." }
+        - { "$from": "0:$.choices[0].message" }
+        - role: tool
+          tool_call_id: { "$from": "0:$.choices[0].message.tool_calls[0].id" }
+          content: '{"temperature_c": 18, "conditions": "light rain"}'
+      tools: *tools
+pass:
+  all:
+    - { ran: 1 }
+    - { path: "1:$.choices[0].message.tool_calls", count: 0 }
+    - { path: "1:$.choices[0].message.content", contains_any: ["18", "rain"] }
+fail:
+  - class: no_call
+    if: { not: { ran: 1 } }
+  - class: loops_on_tool
+    if: { path: "1:$.choices[0].message.tool_calls", count_min: 1 }
+  - class: ignores_result

@@ -1,0 +1,23 @@
+id: reasoning.leak
+description: >
+  A thinking-capable model with a tool prompt. No tool call inside reasoning_content or a
+  <think> block. Models without reasoning pass trivially.
+steps:
+  - body:
+      messages:
+        - { role: user, content: "Think it through, then check the weather in Paris with the tool." }
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            parameters: { type: object, properties: { location: { type: string } }, required: [location] }
+      chat_template_kwargs: { enable_thinking: true }
+pass:
+  all:
+    - not: { path: "$.choices[0].message.reasoning_content", contains_any: ["<tool_call>", "\"get_weather\"", "get_weather("] }
+    - not:
+        all:
+          - { path: "$.choices[0].message.content", contains_any: ["<think>"] }
+          - { path: "$.choices[0].message.content", contains_any: ["<tool_call>", "get_weather"] }
+fail:
+  - class: call_in_reasoning

@@ -1,6 +1,6 @@
 # Maintainer: Berca Akbayir <berca@ratel.sh>
 pkgname=loadmaster
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Weight, balance and preflight for local LLMs: will it fit, how to launch it, does it emit tool calls"
 arch=('x86_64' 'aarch64')

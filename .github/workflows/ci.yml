@@ -29,6 +29,16 @@ jobs:
       - run: cargo xtask check-deps
       - run: cargo xtask gen-fixtures --check
 
+  # Windows support is new (v0.3) and not tested elsewhere: build and run the unit tests.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace
+      - run: cargo test --workspace --lib
+
   msrv:
     runs-on: ubuntu-latest
     steps:

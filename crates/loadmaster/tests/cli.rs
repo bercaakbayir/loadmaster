@@ -118,9 +118,9 @@ fn gpu_json_round_trips_as_hw_file() {
 }
 
 #[test]
-fn errors_name_the_file_and_exit_2() {
+fn errors_name_the_file_and_exit_3() {
     let o = run(&["plan", "Cargo.toml"]);
-    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(o.status.code(), Some(3));
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
         err.contains("Cargo.toml") && err.contains("not a GGUF file"),
@@ -133,7 +133,7 @@ fn no_gpu_is_a_clear_error() {
     let dir = tempfile::tempdir().unwrap();
     let hw = hw_file(&dir, FakeHw::cpu_only());
     let o = run(&["plan", QWEN3_8B, "--hw-file", hw.to_str().unwrap()]);
-    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(o.status.code(), Some(3));
     assert!(String::from_utf8_lossy(&o.stderr).contains("no GPU found"));
 }
 

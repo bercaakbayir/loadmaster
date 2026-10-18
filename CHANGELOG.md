@@ -4,7 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [Unreleased] (0.3.0 scope; not tagged)
+
+### Added (probe, verify, eval)
+- `loadmaster probe <url> --model <name>`: ten declarative YAML fixtures (template, tool
+  single/parallel/nested/round-trip, strict/union/enum-pattern schemas, streamed tool calls,
+  reasoning leaks), three agreeing runs each, classified failures, runtime detection for
+  llama.cpp, Ollama, vLLM, LM Studio, SGLang and TabbyAPI, raw captures, `--json`, exit
+  0/1/2 for pass/partial/fail. Adding a fixture is adding a file.
+- `loadmaster up --verify` writes `[model.verify]`; `status` marks verdicts stale when the
+  runtime version changes.
+- `loadmaster probe eval` (JSONL prompts, deterministic sampling, SQLite) and
+  `probe compare` (two-proportion z-test, `n.s.` below p = 0.05).
+- `cargo xtask results select | run | render` for RESULTS.md: models chosen from the HF API
+  by recorded rules (`results/matrix.toml`); no results yet (needs a 24 GB GPU).
+- Docs: lockfile reference, fixture authoring and failure classes, known issues (empty until
+  confirmed upstream), launch drafts. Windows target and CI job (untested by hand).
+
+### Changed
+- CLI errors exit 3, so 0-2 always mean a result.
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

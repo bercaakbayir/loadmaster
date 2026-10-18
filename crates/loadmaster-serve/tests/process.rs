@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! Supervisor behaviour with real (tiny) processes; no model runtimes involved.
 
 use std::time::Duration;

@@ -4,19 +4,23 @@
 it, and does it actually emit tool calls?** loadmaster answers all three for local LLMs, from the
 real model file, with every number shown.
 
-> Status: pre-release. `loadmaster gpu` and `loadmaster plan <file.gguf>` work for llama.cpp;
-> weights and KV cache match llama.cpp exactly on the runs measured so far (Apple M2, Metal);
-> CUDA is not validated yet. See [CHANGELOG.md](CHANGELOG.md).
-
 ```console
 $ loadmaster plan Qwen3-30B-A3B-Q4_K_M.gguf --ctx 32768
 Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE  ·  ctx 32768
 fits: 11.52 GiB of 11.74 GiB usable on NVIDIA GeForce RTX 3060; all 48 layers and the output head on GPU, routed experts of the first 22 on CPU, q8_0 KV
 
 llama-server -m Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 49 --n-cpu-moe 22 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+
+alternatives:
+  more context (40960)     11.63 GiB ( +0.11 GiB)  experts of 23 layers on CPU, q8_0 KV    2.3-5.0x slower (estimate)
+  quant up (Q5_K_M)        11.54 GiB ( +0.02 GiB)  experts of 26 layers on CPU, q8_0 KV    2.5-5.5x slower (estimate)
+                           size estimated from 5.70 bpw; plan the real file to confirm
+  quant down (Q3_K_M)      11.49 GiB ( -0.03 GiB)  experts of 15 layers on CPU, q8_0 KV    1.9-3.6x slower (estimate)
+                           size estimated from 3.91 bpw; plan the real file to confirm
 ```
 
-Add `--explain` to see every term of the budget and every configuration that was tried.
+`--explain` prints every term of the budget (weights, KV cache, compute buffer, vision
+projector, headroom) with its inputs, and every configuration that was tried.
 
 ## Why "loadmaster"?
 
@@ -24,11 +28,11 @@ On a cargo aircraft the loadmaster decides whether the flight can happen at all:
 every pallet against maximum takeoff weight, place the load so the centre of gravity stays in
 limits, and sign off the preflight. Running a local LLM is the same job in different units.
 
-- **Weight** — do the tensors, KV cache, compute buffers and vision projector fit in GPU memory
+- **Weight**: do the tensors, KV cache, compute buffers and vision projector fit in GPU memory
   at the context length you want?
-- **Balance** — which layers stay on the GPU, whether MoE experts are offloaded, f16 or q8_0 KV
+- **Balance**: which layers stay on the GPU, whether MoE experts are offloaded, f16 or q8_0 KV
   cache, and which model gets unloaded when several share one card.
-- **Preflight** — does a model that fits also fly: tool calls in `tool_calls` rather than plain
+- **Preflight**: does a model that fits also fly: tool calls in `tool_calls` rather than plain
   text, JSON schemas honoured, streams intact?
 
 loadmaster does these in that order, reads the real model file instead of a spec sheet, prints
@@ -37,27 +41,86 @@ same way tomorrow.
 
 ## Commands
 
-| Command | Does | Ships in |
-|---|---|---|
-| `loadmaster scan` | Index HF cache, Ollama, LM Studio and loose GGUF dirs (read-only) | v0.1 |
-| `loadmaster gpu` | Detect GPUs and usable memory | v0.1 |
-| `loadmaster plan <model> [--ctx N] [--explain]` | Memory budget and exact launch command for llama.cpp, vLLM or exl3 | v0.1 |
-| `loadmaster init` / `add` | Write `models.lock` with frozen flags and footprints | v0.2 |
-| `loadmaster up` / `down` / `swap` / `status` | Serve several models on one port, evicting by footprint | v0.2 |
-| `loadmaster import llama-swap <config.yaml>` | Migrate a llama-swap config | v0.2 |
-| `loadmaster probe <url> --model <name>` | Tool-call and structured-output conformance verdict | v0.3 |
+| Command | Does |
+|---|---|
+| `loadmaster scan [--path DIR] [--json]` | Index the HF cache, Ollama, LM Studio and loose dirs (read-only), with fit at 8k/32k/128k |
+| `loadmaster gpu [--json]` | GPUs and usable memory (NVML, Apple unified memory) |
+| `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain] [--json]` | Memory budget, the exact launch command, alternatives |
+| `loadmaster init <names…\|--all>` / `add <model>` | Write `models.lock` with frozen flags and footprints |
+| `loadmaster plan <name> --update` | Re-plan one lockfile entry and show the diff |
+| `loadmaster up [--verify]` / `down` / `swap <name>` / `status` | Serve every model on one OpenAI-compatible port, evicting by footprint |
+| `loadmaster import llama-swap <config.yaml>` | Convert a llama-swap config into `models.lock` |
+| `loadmaster probe <url> --model <name> [--json]` | Tool-call and structured-output conformance; exit 0 pass, 1 partial, 2 fail |
+| `loadmaster probe eval <prompts.jsonl> --model a --model b` / `probe compare <run> <run>` | Your prompts, deterministic sampling, SQLite results, significance-tested diffs |
 
-`lm` is installed as a short alias for `loadmaster`.
+`<model>` is a `.gguf` file, a Hugging Face model directory, or a name from `scan`
+(`llama3.2:1b`, `org/repo`, `hf://org/repo/file.gguf`). `lm` is installed as a short alias.
+Errors exit 3.
+
+## How it works
+
+- **Plan.** GGUF and safetensors headers give exact per-layer bytes and KV dimensions
+  (GQA, sliding-window layers, MLA). The planner follows llama.cpp's own placement
+  (`-ngl` offloads the output head, then the last layers; `--n-cpu-moe` keeps routed experts
+  of the first layers on the CPU), prefers f16 KV, then q8_0, then q4_0 with a warning, then
+  offloads experts before whole layers. vLLM plans solve `--gpu-memory-utilization` and the
+  largest `--max-model-len`; exl3 plans emit a tabbyAPI config. Same inputs, same bytes out.
+- **Serve.** `up` starts runtimes on demand behind one proxy port, unloads the least recently
+  used idle model when a request needs room (`keep_warm` models last, models mid-request
+  never), restarts crashes with backoff, and exposes `/metrics`. On Apple Silicon the budget
+  is also capped by free RAM.
+- **Probe.** Ten declarative fixtures (tool calls single, parallel, nested, round-trip;
+  strict, union and enum/pattern schemas; streamed tool calls; reasoning leaks; the chat
+  template) run three times each against any OpenAI-compatible endpoint; failures are
+  classified (`call_in_content`, `schema_dropped_silent`, `stream_truncated`, …).
+  `up --verify` records the verdict in `models.lock`; `status` flags it stale when the
+  runtime version changes.
+
+## Status
+
+Pre-release. All commands are implemented and tested without a GPU (fixtures, a scriptable
+fake OpenAI server, fake hardware). What is and is not validated against real runs:
+
+| | Validated | Not yet |
+|---|---|---|
+| Weights and KV footprint | exact vs llama.cpp (28 runs, Apple M2, Metal) | NVIDIA/CUDA |
+| Compute buffer | never under, at most 1.33x over (same runs) | CUDA; MoE models |
+| Fit / OOM | [13/13 cases](docs/validation.md) on one M2 8 GB | the 30-case NVIDIA set; llmfit and `--fit` columns |
+| vLLM, exl3 plans | unit-tested | real runs |
+| Probe | every failure class reproduced on the fake runtime | [`RESULTS.md`](RESULTS.md) for 20 models (needs a 24 GB GPU) |
+| Docker, systemd, AUR, Windows | files written | built and run |
+
+Help close these: [docs/validation.md](docs/validation.md) explains how to record a case
+safely on your machine.
+
+## Install
+
+```sh
+cargo install loadmaster     # once published; until then:
+cargo install --path crates/loadmaster
+```
+
+Release binaries and a Homebrew formula come from cargo-dist (`dist-workspace.toml`).
+llama.cpp, vLLM or tabbyAPI are separate installs; loadmaster plans for them and runs them.
 
 ## Building
 
 ```sh
 cargo build --release
-cargo test --workspace
-cargo xtask check-deps
+cargo test --workspace                 # no GPU needed
+cargo xtask check-deps                 # crate boundaries
+cargo xtask gen-fixtures --check       # synthetic model fixtures are current
+cargo xtask fetch-headers && cargo xtask validate
 ```
 
-No GPU is needed to build or test.
+## Docs
+
+[models.lock reference](docs/lockfile.md) ·
+[probe fixtures and failure classes](docs/fixtures.md) ·
+[validation](docs/validation.md) ·
+[known issues](docs/known-issues.md) ·
+[design decisions](docs/decisions/) ·
+[changelog](CHANGELOG.md)
 
 ## License
 

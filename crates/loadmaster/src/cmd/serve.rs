@@ -83,6 +83,7 @@ pub fn up(args: UpArgs) -> anyhow::Result<ExitCode> {
     let logs = super::state_dir().join("logs");
     let mut stores = Stores::default();
     let mut specs = Vec::new();
+    let mut targets = Vec::new();
     let mut problems = Vec::new();
     for m in &lock.models {
         let Some(footprint) = m.footprint_gb else {
@@ -104,6 +105,11 @@ pub fn up(args: UpArgs) -> anyhow::Result<ExitCode> {
             Some(_) => info.mmproj.as_ref().map(|mm| mm.path.clone()),
             None => None,
         };
+        targets.push(super::verify::Target {
+            name: m.name.clone(),
+            template_blake3: info.chat_template.as_ref().map(|t| t.blake3.clone()),
+            quant: info.quant.to_string(),
+        });
         let env = m
             .env
             .iter()
@@ -169,8 +175,12 @@ pub fn up(args: UpArgs) -> anyhow::Result<ExitCode> {
             logs.display()
         );
         if verify {
-            let _ = &lock_path;
-            bail!("--verify arrives with the probe");
+            tokio::spawn(super::verify::run(
+                std::sync::Arc::clone(&sup),
+                targets,
+                listen.clone(),
+                lock_path,
+            ));
         }
         loadmaster_serve::serve(listener, sup, routes, preload).await?;
         anyhow::Ok(())
@@ -230,15 +240,33 @@ pub fn status(lock_path: &Path, json: bool) -> anyhow::Result<ExitCode> {
         println!("{}", serde_json::to_string_pretty(&v)?);
         return Ok(ExitCode::SUCCESS);
     }
-    let verdicts: HashMap<&str, &str> = lock
+    let verdicts: HashMap<&str, &loadmaster_lock::Verify> = lock
         .models
         .iter()
-        .filter_map(|m| {
-            m.verify
-                .as_ref()
-                .map(|v| (m.name.as_str(), v.verdict.as_str()))
-        })
+        .filter_map(|m| m.verify.as_ref().map(|v| (m.name.as_str(), v)))
         .collect();
+    // A verdict holds for the runtime version it was measured on; for running models,
+    // compare with what the backend reports now.
+    let rt = runtime()?;
+    let verdict_cell = |name: &str, port: Option<u64>| -> String {
+        let Some(v) = verdicts.get(name) else {
+            return "-".into();
+        };
+        let now = port.and_then(|p| {
+            let c = super::probe::client(&format!("http://127.0.0.1:{p}"), None);
+            let d = rt.block_on(loadmaster_probe::detect::detect(&c));
+            (d.runtime != "unknown").then(|| super::verify::runtime_label(&d))
+        });
+        match (now, &v.runtime_version) {
+            (Some(now), Some(then)) if now != *then => {
+                format!(
+                    "{} (stale: verified on {then}, running {now}; re-run `up --verify`)",
+                    v.verdict
+                )
+            }
+            _ => v.verdict.clone(),
+        }
+    };
     println!(
         "{:<28} {:<9} {:>7} {:>6} {:>10} {:>8}  {:<8}",
         "NAME", "STATE", "PID", "PORT", "RESIDENT", "RESTARTS", "VERIFY"
@@ -253,7 +281,7 @@ pub fn status(lock_path: &Path, json: bool) -> anyhow::Result<ExitCode> {
             s["port"].as_u64().map_or("-".into(), |p| p.to_string()),
             gib(s["resident_bytes"].as_u64().unwrap_or(0)),
             s["restarts"].as_u64().unwrap_or(0),
-            verdicts.get(name).copied().unwrap_or("-"),
+            verdict_cell(name, s["port"].as_u64()),
         );
         if s["state"] == "failed" {
             println!(

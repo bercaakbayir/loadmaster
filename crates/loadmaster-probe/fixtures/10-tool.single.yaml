@@ -1,0 +1,43 @@
+id: tool.single
+description: One tool, a prompt that needs it. Exactly one entry in tool_calls with valid JSON arguments.
+core: true
+steps:
+  - body:
+      messages:
+        - { role: system, content: "You are a helpful assistant. Use the provided tools when they help." }
+        - { role: user, content: "What is the weather in Paris right now? Use the tool." }
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            description: Current weather for a city.
+            parameters:
+              type: object
+              properties:
+                location: { type: string, description: "City name" }
+                unit: { type: string, enum: [celsius, fahrenheit] }
+              required: [location]
+      tool_choice: auto
+pass:
+  all:
+    - { path: "$.choices[0].message.tool_calls", count: 1 }
+    - { path: "$.choices[0].message.tool_calls[0].function.name", equals: get_weather }
+    - { path: "$.choices[0].message.tool_calls[0].function.arguments", json: true }
+    - path: "$.choices[0].message.tool_calls[0].function.arguments"
+      parse: true
+      schema: { type: object, required: [location], properties: { location: { type: string } } }
+fail:
+  - class: call_in_reasoning
+    if:
+      all:
+        - { path: "$.choices[0].message.tool_calls", count: 0 }
+        - { path: "$.choices[0].message.reasoning_content", contains_any: ["get_weather", "<tool_call>"] }
+  - class: call_in_content
+    if:
+      all:
+        - { path: "$.choices[0].message.tool_calls", count: 0 }
+        - { path: "$.choices[0].message.content", contains_any: ["get_weather", "<tool_call>", "\"arguments\""] }
+  - class: args_invalid_json
+    if: { path: "$.choices[0].message.tool_calls[*].function.arguments", json: false }
+  - class: no_call
+    if: { path: "$.choices[0].message.tool_calls", count: 0 }

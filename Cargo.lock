@@ -1236,9 +1236,10 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loadmaster"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "clap",
  "insta",
  "loadmaster-hw",
@@ -1260,7 +1261,7 @@ dependencies = [
 
 [[package]]
 name = "loadmaster-hw"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "nvml-wrapper",
  "serde",
@@ -1271,7 +1272,7 @@ dependencies = [
 
 [[package]]
 name = "loadmaster-lock"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "insta",
  "loadmaster-hw",
@@ -1286,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "loadmaster-model"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "insta",
@@ -1298,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "loadmaster-plan"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "insta",
  "loadmaster-hw",
@@ -1312,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "loadmaster-probe"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "blake3",
@@ -1328,13 +1329,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
  "tracing",
  "yaml-rust2",
 ]
 
 [[package]]
 name = "loadmaster-serve"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -1353,7 +1355,7 @@ dependencies = [
 
 [[package]]
 name = "loadmaster-store"
-version = "0.0.0"
+version = "0.3.0"
 dependencies = [
  "loadmaster-model",
  "serde",

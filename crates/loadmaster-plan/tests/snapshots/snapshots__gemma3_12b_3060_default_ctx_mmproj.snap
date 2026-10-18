@@ -5,21 +5,22 @@ expression: "render(GEMMA3_12B, FakeHw::rtx_3060_12g(), None, None)"
 WEIGHT   Gemma 3 12B It · gemma3 · Q4_K_M · 48 layers
   weights              6.94 GiB   48/48 layers + output head 0.53 GiB (tied: second copy of token embeddings); token embeddings 0.53 GiB stay on CPU
   KV cache             2.37 GiB   q8_0: 8 global layers x 65536 cells x (K 2048 + V 2048) + 40 sliding-window layers x 1536 cells (window 1024) x (K 2048 + V 2048), x 34/32 B
-  compute buffer       0.63 GiB   n_ubatch 512 x (n_embd 3840 + n_vocab 262144) x 4 B + 128 MiB, flash attention
+  compute buffer       0.65 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 65536 + peak of attention 12 B x n_ubatch 512 x (n_embd 3840 + q 4096 + k 2048 + v 2048) + 2 B x ctx 65536 x (k + v); flash attention
   vision projector     0.79 GiB   0.78 GiB weights + one image: 256 tokens (gemma3 projector pools to 256 tokens) x n_embd 3840 x 2 B
   headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
   ------------------------------
-  GPU total           11.51 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  GPU total           11.53 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
   weights on CPU       0.53 GiB   token embeddings
-  host total           0.53 GiB   of 24.00 GiB available host memory
+  compute on CPU       0.09 GiB   mask 2 B x n_ubatch 512 x ctx 65536 + 16 B x n_ubatch x n_embd 3840
+  host total           0.62 GiB   of 24.00 GiB available host memory
 
 BALANCE  all 48 layers and the output head on GPU
   ctx 65536: not given; largest power of two below the training context 131072 that fits on GPU with q8_0 KV
   KV cache q8_0: f16 does not fit with every layer on GPU; q8_0 does
   flash attention on: required for a quantised V cache and smaller compute buffers
   tried:
-    over all layers on GPU, f16 KV                          GPU   13.61 GiB  host    0.53 GiB
-    fits all layers on GPU, q8_0 KV                         GPU   11.51 GiB  host    0.53 GiB
+    over all layers on GPU, f16 KV                          GPU   13.62 GiB  host    0.62 GiB
+    fits all layers on GPU, q8_0 KV                         GPU   11.53 GiB  host    0.62 GiB
 
 COMMAND
   llama-server -m fixtures/gguf/gemma-3-12b/gemma-3-12b-it-Q4_K_M.gguf --mmproj fixtures/gguf/gemma-3-12b/mmproj-gemma-3-12b-it-F16.gguf -c 65536 -ngl 49 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

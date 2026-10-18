@@ -10,8 +10,9 @@ use serde::Serialize;
 
 /// llama.cpp pads the KV cache size to a multiple of this.
 pub const KV_PAD: u32 = 256;
-/// Fixed part of the llama.cpp compute buffer.
-pub const COMPUTE_BASE: u64 = 128 * MIB;
+/// Fixed parts of the llama.cpp compute buffer (ADR 0005).
+pub const COMPUTE_BASE: u64 = 16 * MIB;
+pub const COMPUTE_BASE_NO_FA: u64 = 32 * MIB;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -152,32 +153,87 @@ pub fn kv_type_valid(model: &ModelInfo, kv: KvType) -> bool {
         .all(|l| kv_bytes_per_cell(kv, l).is_some())
 }
 
-/// llama.cpp compute buffer. With flash attention: `n_ubatch * (n_embd + n_vocab) * 4`
-/// plus a fixed 128 MiB. Without it, the f32 attention scores for one ubatch are added.
+/// llama.cpp GPU compute buffer: the peak of live intermediate tensors for one ubatch.
+///
+/// Fitted to buffer sizes llama.cpp reported (`validation/observed.toml`, ADR 0005), rounded
+/// up so every observation is covered:
+/// - flash attention: `16 MiB + mask + max(FFN, attention)`, where
+///   mask = `2 B x n_ubatch x ctx`, FFN = `16 B x n_ubatch x ffn_width`, and
+///   attention = `12 B x n_ubatch x (n_embd + q + k + v) + 2 B x ctx x (k + v)`;
+/// - without: `32 MiB + n_ubatch x ctx x (4 B x n_head + 4 B)` (f32 scores and mask).
 pub fn compute_buffer(model: &ModelInfo, cfg: &Config) -> Term {
     let ub = u64::from(cfg.n_ubatch);
-    let base = ub * (u64::from(model.n_embd) + u64::from(model.n_vocab)) * 4 + COMPUTE_BASE;
+    let ctx = u64::from(cfg.ctx.next_multiple_of(KV_PAD));
+    let (k, v) = kv_width(model);
+    let q = u64::from(model.n_head) * u64::from(model.head_dim);
+    let embd = u64::from(model.n_embd);
     if cfg.flash_attn {
+        let mask = 2 * ub * ctx;
+        let ffn = 16 * ub * u64::from(model.ffn_width());
+        let attn = 12 * ub * (embd + q + k + v) + 2 * ctx * (k + v);
+        let (peak, which) = if ffn >= attn {
+            (
+                ffn,
+                format!("FFN 16 B x n_ubatch {ub} x ffn {}", model.ffn_width()),
+            )
+        } else {
+            (
+                attn,
+                format!(
+                    "attention 12 B x n_ubatch {ub} x (n_embd {embd} + q {q} + k {k} + v {v}) + 2 B x ctx {ctx} x (k + v)"
+                ),
+            )
+        };
         Term {
             key: "compute",
-            bytes: base,
+            bytes: COMPUTE_BASE + mask + peak,
             detail: format!(
-                "n_ubatch {ub} x (n_embd {} + n_vocab {}) x 4 B + 128 MiB, flash attention",
-                model.n_embd, model.n_vocab
+                "16 MiB + mask 2 B x n_ubatch {ub} x ctx {ctx} + peak of {which}; flash attention"
             ),
         }
     } else {
-        let ctx = u64::from(cfg.ctx.next_multiple_of(KV_PAD));
-        let scores = ub * ctx * u64::from(model.n_head) * 4;
+        let scores = ub * ctx * (4 * u64::from(model.n_head) + 4);
         Term {
             key: "compute",
-            bytes: base + scores,
+            bytes: COMPUTE_BASE_NO_FA + scores,
             detail: format!(
-                "n_ubatch {ub} x (n_embd {} + n_vocab {}) x 4 B + 128 MiB, plus attention scores n_ubatch x ctx {ctx} x n_head {} x 4 B",
-                model.n_embd, model.n_vocab, model.n_head
+                "32 MiB + f32 scores and mask n_ubatch {ub} x ctx {ctx} x (4 B x n_head {} + 4 B)",
+                model.n_head
             ),
         }
     }
+}
+
+/// Host compute buffer. With every layer on the GPU llama.cpp keeps only the input side on
+/// the CPU (observed exactly `2 B x n_ubatch x ctx + 16 B x n_ubatch x n_embd`); with layers
+/// on the CPU the CPU runs a full graph, bounded by the GPU formula.
+pub fn host_compute_buffer(model: &ModelInfo, cfg: &Config, all_layers_on_gpu: bool) -> Term {
+    if all_layers_on_gpu {
+        let ub = u64::from(cfg.n_ubatch);
+        let ctx = u64::from(cfg.ctx.next_multiple_of(KV_PAD));
+        Term {
+            key: "compute_cpu",
+            bytes: 2 * ub * ctx + 16 * ub * u64::from(model.n_embd),
+            detail: format!(
+                "mask 2 B x n_ubatch {ub} x ctx {ctx} + 16 B x n_ubatch x n_embd {}",
+                model.n_embd
+            ),
+        }
+    } else {
+        let t = compute_buffer(model, cfg);
+        Term {
+            key: "compute_cpu",
+            bytes: t.bytes,
+            detail: "layers run on the CPU: same bound as the GPU compute buffer".into(),
+        }
+    }
+}
+
+/// Largest per-layer K and V widths.
+fn kv_width(model: &ModelInfo) -> (u64, u64) {
+    model.layers.iter().fold((0, 0), |(k, v), l| {
+        (k.max(u64::from(l.k_dim)), v.max(u64::from(l.v_dim)))
+    })
 }
 
 pub fn mmproj(model: &ModelInfo) -> Option<Term> {
@@ -236,8 +292,12 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
     }
     w_cpu += experts_cpu;
 
-    let mut weights_detail = format!("{gpu_layers}/{n_layer} layers");
-    if placement.n_cpu_moe > 0 {
+    let mut weights_detail = if gpu_layers == 0 && !output_gpu {
+        "nothing on GPU".to_owned()
+    } else {
+        format!("{gpu_layers}/{n_layer} layers")
+    };
+    if experts_cpu > 0 {
         weights_detail += &format!(
             " (experts of first {} layers on CPU, {})",
             placement.n_cpu_moe.min(n_layer),
@@ -254,7 +314,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
                 ""
             }
         );
-    } else {
+    } else if gpu_layers > 0 {
         weights_detail += "; output head on CPU";
     }
     weights_detail += &format!("; token embeddings {} stay on CPU", gib(model.embd_bytes));
@@ -313,6 +373,11 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             detail: format!("KV of {} CPU layers", n_layer - gpu_layers),
         });
     }
+    host.push(host_compute_buffer(
+        model,
+        cfg,
+        gpu_layers == n_layer && experts_cpu == 0,
+    ));
     let host_bytes = host.iter().map(|t| t.bytes).sum();
     Some(Footprint {
         gpu,

@@ -3,24 +3,25 @@ source: crates/loadmaster-plan/tests/snapshots.rs
 expression: "render(QWEN3_30B_A3B, FakeHw::rtx_3060_12g(), Some(32768), None)"
 ---
 WEIGHT   Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE
-  weights              8.68 GiB   48/48 layers (experts of first 23 layers on CPU, 7.28 GiB) + output head 0.24 GiB; token embeddings 0.16 GiB stay on CPU
+  weights              9.00 GiB   48/48 layers (experts of first 22 layers on CPU, 6.96 GiB) + output head 0.24 GiB; token embeddings 0.16 GiB stay on CPU
   KV cache             1.59 GiB   q8_0: 48 layers x 32768 cells x (K 512 + V 512) x 34/32 B
-  compute buffer       0.42 GiB   n_ubatch 512 x (n_embd 2048 + n_vocab 151936) x 4 B + 128 MiB, flash attention
+  compute buffer       0.15 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 32768 + peak of attention 12 B x n_ubatch 512 x (n_embd 2048 + q 4096 + k 512 + v 512) + 2 B x ctx 32768 x (k + v); flash attention
   headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
   ------------------------------
-  GPU total           11.48 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
-  weights on CPU       7.44 GiB   token embeddings + routed experts
-  host total           7.44 GiB   of 24.00 GiB available host memory
+  GPU total           11.52 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  weights on CPU       7.12 GiB   token embeddings + routed experts
+  compute on CPU       0.15 GiB   layers run on the CPU: same bound as the GPU compute buffer
+  host total           7.27 GiB   of 24.00 GiB available host memory
 
-BALANCE  all 48 layers and the output head on GPU, routed experts of the first 23 on CPU
+BALANCE  all 48 layers and the output head on GPU, routed experts of the first 22 on CPU
   ctx 32768: requested with --ctx
   KV cache q8_0: nothing fits with every layer on GPU; offloading keeps q8_0 because quantising the cache further costs quality, offloading only speed
   flash attention on: required for a quantised V cache and smaller compute buffers
   tried:
-    over all layers on GPU, f16 KV                          GPU   20.16 GiB  host    0.16 GiB
-    over all layers on GPU, q8_0 KV                         GPU   18.75 GiB  host    0.16 GiB
-    over all layers on GPU, q4_0 KV                         GPU   18.00 GiB  host    0.16 GiB
-    fits experts of first 23/48 layers on CPU, q8_0 KV      GPU   11.48 GiB  host    7.44 GiB
+    over all layers on GPU, f16 KV                          GPU   19.89 GiB  host    0.21 GiB
+    over all layers on GPU, q8_0 KV                         GPU   18.48 GiB  host    0.21 GiB
+    over all layers on GPU, q4_0 KV                         GPU   17.73 GiB  host    0.21 GiB
+    fits experts of first 22/48 layers on CPU, q8_0 KV      GPU   11.52 GiB  host    7.27 GiB
 
 COMMAND
-  llama-server -m fixtures/gguf/qwen3-30b-a3b/Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 49 --n-cpu-moe 23 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+  llama-server -m fixtures/gguf/qwen3-30b-a3b/Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 49 --n-cpu-moe 22 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

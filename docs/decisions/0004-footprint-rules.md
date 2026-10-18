@@ -36,9 +36,7 @@ Metal) weights and KV match to within 0.3 MiB on both devices, at `-ngl` 0, 1, 8
   its graph per ubatch. Without flash attention the attention scores are f32 (4 B), not 2 B.
   Flash attention is always emitted `on` for llama.cpp. When no layer is on the GPU the
   GPU compute buffer is ~0 (observed 0.5 MiB at `-ngl 1`).
-  **Known to be 3-5x too high** on Metal (Llama 3.2 1B: planned 382 MiB, observed 68-221
-  MiB with flash attention). Pending a formula fitted on more models; see
-  `validation/observed.toml`.
+  Superseded by the fitted formula in ADR 0005.
 - **Headroom** is part of the footprint `F`. `F` is compared with `usable` (NVML `free`, or
   the Metal working set), so headroom is subtracted exactly once. (§7 subtracts it from both
   sides.)

@@ -5,19 +5,20 @@ expression: "render(GPT_OSS_20B, FakeHw::m3_max_64g(), None, None)"
 WEIGHT   Gpt Oss 20b · gpt-oss · MXFP4_MOE · 24 layers · MoE
   weights             10.69 GiB   24/24 layers + output head 0.57 GiB; token embeddings 0.57 GiB stay on CPU
   KV cache             3.02 GiB   f16: 12 global layers x 131072 cells x (K 512 + V 512) + 12 sliding-window layers x 768 cells (window 128) x (K 512 + V 512), x 2 B
-  compute buffer       0.51 GiB   n_ubatch 512 x (n_embd 2880 + n_vocab 201088) x 4 B + 128 MiB, flash attention
+  compute buffer       0.44 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 131072 + peak of attention 12 B x n_ubatch 512 x (n_embd 2880 + q 4096 + k 512 + v 512) + 2 B x ctx 131072 x (k + v); flash attention
   headroom             1.50 GiB   macOS and display on unified memory (default 1536 MiB)
   ------------------------------
-  GPU total           15.72 GiB   of 48.00 GiB usable on Apple M3 Max (Metal working-set default, 3/4 of RAM (estimated))
+  GPU total           15.65 GiB   of 48.00 GiB usable on Apple M3 Max (Metal working-set default, 3/4 of RAM (estimated))
   weights on CPU       0.57 GiB   token embeddings
-  host total           0.57 GiB   of 32.00 GiB available host memory
+  compute on CPU       0.15 GiB   mask 2 B x n_ubatch 512 x ctx 131072 + 16 B x n_ubatch x n_embd 2880
+  RAM needed          14.87 GiB   of 32.00 GiB RAM free now (unified memory: GPU side minus headroom + host side)
 
 BALANCE  all 24 layers and the output head on GPU
   ctx 131072: not given; the training context 131072 fits on GPU with f16 KV
   KV cache f16: f16 fits with every layer on GPU
   flash attention on: required for a quantised V cache and smaller compute buffers
   tried:
-    fits all layers on GPU, f16 KV                          GPU   15.72 GiB  host    0.57 GiB
+    fits all layers on GPU, f16 KV                          GPU   15.65 GiB  host   14.87 GiB
 
 COMMAND
   llama-server -m fixtures/gguf/gpt-oss-20b/gpt-oss-20b-mxfp4.gguf -c 131072 -ngl 25 -fa on -np 1 --jinja

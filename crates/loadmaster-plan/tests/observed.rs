@@ -18,6 +18,8 @@ struct Model {
     name: String,
     paths: Vec<String>,
     run: Vec<Run>,
+    #[serde(default)]
+    incident: Vec<Incident>,
 }
 
 #[derive(Deserialize)]
@@ -38,9 +40,18 @@ struct Args {
 
 #[derive(Deserialize)]
 struct Device {
-    model: f64,
+    model: Option<f64>,
     kv: f64,
     compute: f64,
+}
+
+/// A configuration that took the machine down; the planner must refuse it.
+#[derive(Deserialize)]
+struct Incident {
+    args: Args,
+    outcome: String,
+    gpu_usable_mib: u64,
+    host_free_mib: u64,
 }
 
 const MIB: f64 = (1 << 20) as f64;
@@ -116,7 +127,13 @@ fn planner_matches_observed_buffers() {
                 get(&fp.host, "kv_cpu"),
                 get(&fp.gpu, "compute"),
             ];
-            let seen = [r.gpu.model, r.cpu.model, r.gpu.kv, r.cpu.kv, r.gpu.compute];
+            let seen = [
+                r.gpu.model.unwrap_or(f64::NAN),
+                r.cpu.model.unwrap_or(f64::NAN),
+                r.gpu.kv,
+                r.cpu.kv,
+                r.gpu.compute,
+            ];
             let cell = |i: usize| {
                 format!(
                     "{:7.2}/{:<7.2}{}",
@@ -147,20 +164,61 @@ fn planner_matches_observed_buffers() {
                 .iter()
                 .enumerate()
             {
-                if (planned[i] - seen[i]).abs() > 1.0 {
+                if !seen[i].is_nan() && (planned[i] - seen[i]).abs() > 1.0 {
                     failures.push(format!(
                         "{} ctx {} ngl {}: {what} planned {:.2} observed {:.2}",
                         m.name, a.ctx, a.ngl, planned[i], seen[i]
                     ));
                 }
             }
-            if planned[4] + 0.5 < seen[4] {
+            if planned[4] + 0.5 < seen[4] || planned[4] > seen[4] * 1.5 + 16.0 {
                 failures.push(format!(
-                    "{} ctx {} ub {}: gpu compute underestimated, planned {:.2} observed {:.2}",
+                    "{} ctx {} ub {}: gpu compute off, planned {:.2} observed {:.2}",
                     m.name, a.ctx, a.ubatch, planned[4], seen[4]
                 ));
             }
         }
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "needs the model files listed in validation/observed.toml"]
+fn planner_refuses_recorded_incidents() {
+    use loadmaster_hw::{FakeHw, MIB};
+    use loadmaster_plan::{Error, PlanRequest, plan};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/observed.toml");
+    let file: File = toml::from_str(&std::fs::read_to_string(root).unwrap()).unwrap();
+    for m in &file.model {
+        let Some(path) = m.paths.iter().map(|p| expand(p)).find(|p| p.exists()) else {
+            continue;
+        };
+        let info = ModelInfo::from_gguf(&path).unwrap();
+        for inc in &m.incident {
+            let mut hw = FakeHw::m2_8g().0;
+            hw.gpus[0].usable_bytes = inc.gpu_usable_mib * MIB;
+            hw.host.available_bytes = inc.host_free_mib * MIB;
+            let req = PlanRequest {
+                ctx: Some(inc.args.ctx),
+                n_ubatch: inc.args.ubatch,
+                ..Default::default()
+            };
+            let result = plan(&info, &hw, &hw.gpus[0], &req);
+            eprintln!(
+                "{} ctx {} ({}): {:?}",
+                m.name,
+                inc.args.ctx,
+                inc.outcome,
+                result.as_ref().map(|p| p.kv).map_err(|e| e.to_string())
+            );
+            assert!(
+                matches!(result, Err(Error::CannotFit(_))),
+                "{} ctx {}: planner would allow a config that caused: {}",
+                m.name,
+                inc.args.ctx,
+                inc.outcome
+            );
+        }
+    }
 }

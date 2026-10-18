@@ -103,6 +103,8 @@ pub struct Plan {
     pub budget: u64,
     /// Host bytes CPU-side tensors must fit in.
     pub host_budget: u64,
+    /// Host RAM this plan needs; on unified memory this includes the GPU side.
+    pub host_need: u64,
     pub trials: Vec<Trial>,
     pub warnings: Vec<String>,
     /// The launch command as argv.
@@ -182,15 +184,27 @@ impl Search<'_> {
         Some(Candidate { placement, cfg, fp })
     }
 
+    /// Host RAM the configuration needs. On unified memory the GPU side is the same RAM
+    /// (and Metal buffers are wired, so it cannot be paged out): both sides count, minus
+    /// the headroom, which is RAM the OS already holds.
+    fn host_need(&self, c: &Candidate) -> u64 {
+        match self.gpu.memory {
+            MemoryKind::Unified => {
+                c.fp.gpu_bytes.saturating_sub(c.cfg.headroom.bytes) + c.fp.host_bytes
+            }
+            MemoryKind::Dedicated => c.fp.host_bytes,
+        }
+    }
+
     fn fits(&self, c: &Candidate) -> bool {
-        c.fp.gpu_bytes <= self.gpu.usable_bytes && c.fp.host_bytes <= self.host_budget
+        c.fp.gpu_bytes <= self.gpu.usable_bytes && self.host_need(c) <= self.host_budget
     }
 
     fn trial(&self, label: String, c: &Candidate) -> Trial {
         Trial {
             label,
             gpu_bytes: c.fp.gpu_bytes,
-            host_bytes: c.fp.host_bytes,
+            host_bytes: self.host_need(c),
             fits: self.fits(c),
         }
     }
@@ -429,16 +443,7 @@ pub fn plan(
             "q4_0 KV cache measurably lowers output quality; consider a smaller --ctx or a smaller quant".into(),
         );
     }
-    if gpu.memory == MemoryKind::Unified {
-        let needed = c.fp.gpu_bytes.saturating_sub(c.cfg.headroom.bytes) + c.fp.host_bytes;
-        if hw.host.available_bytes > 0 && needed > hw.host.available_bytes {
-            warnings.push(format!(
-                "unified memory: this needs {} but only {} of RAM is free now; macOS will page other apps out",
-                gib(needed),
-                gib(hw.host.available_bytes)
-            ));
-        }
-    }
+    let host_need = s.host_need(&c);
     let mut plan = Plan {
         model: summary(model),
         gpu: gpu.clone(),
@@ -453,6 +458,7 @@ pub fn plan(
         footprint: c.fp,
         budget: gpu.usable_bytes,
         host_budget: s.host_budget,
+        host_need,
         trials,
         warnings,
         argv: Vec::new(),
@@ -488,8 +494,7 @@ impl State {
 }
 
 fn overshoot(s: &Search<'_>, c: &Candidate) -> u64 {
-    c.fp.gpu_bytes.saturating_sub(s.gpu.usable_bytes)
-        + c.fp.host_bytes.saturating_sub(s.host_budget)
+    c.fp.gpu_bytes.saturating_sub(s.gpu.usable_bytes) + s.host_need(c).saturating_sub(s.host_budget)
 }
 
 fn default_ctx(s: &Search<'_>, kv_order: &[KvType]) -> (u32, String) {
@@ -565,7 +570,7 @@ fn no_fit(
     trials: Vec<Trial>,
 ) -> Error {
     let gpu_over = closest.fp.gpu_bytes.saturating_sub(s.gpu.usable_bytes);
-    let host_over = closest.fp.host_bytes.saturating_sub(s.host_budget);
+    let host_over = s.host_need(&closest).saturating_sub(s.host_budget);
     let (limit, short_by) = if gpu_over >= host_over {
         ("gpu", gpu_over)
     } else {

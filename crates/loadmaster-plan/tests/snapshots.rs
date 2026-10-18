@@ -53,7 +53,7 @@ case!(
     None
 );
 case!(
-    llama_8b_m2_8g_8k_partial_offload,
+    llama_8b_m2_8g_8k_short_on_free_ram,
     LLAMA_8B,
     FakeHw::m2_8g(),
     Some(8192)

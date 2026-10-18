@@ -34,6 +34,14 @@ All notable changes to this project are documented here. The format follows
 - `-ngl` placement: llama.cpp offloads the output head first, then the last `ngl - 1`
   layers. Partial-offload plans were one layer off.
 
+- Unified memory (Apple Silicon): a plan fits only if GPU and host sides together fit in
+  RAM free now. Previously loadmaster said "fits" for a configuration that reset an 8 GB M2
+  (ADR 0005).
+- Compute buffer: replaced the spec formula (3-5x too high) with one fitted to 28 observed
+  runs; never below observed, at most 1.33x above (ADR 0005). Host-side compute buffer is
+  now counted.
+
 ### Added
-- `validation/observed.toml`: buffer sizes llama.cpp reported for 18 runs of Llama 3.2 1B on
-  an M2, replayed by an ignored test. Weights and KV match within 0.3 MiB.
+- `validation/observed.toml`: buffer sizes llama.cpp reported for 28 runs (Llama 3.2 1B,
+  Qwen3 0.6B) on an M2, plus one recorded incident, replayed by ignored tests. Weights and KV
+  match within 0.3 MiB.

@@ -96,8 +96,13 @@ pub struct ModelInfo {
     pub n_head_kv: u32,
     pub head_dim: u32,
     pub n_ctx_train: u32,
+    /// Dense FFN width (`feed_forward_length`, largest over layers); 0 when not stated.
+    pub n_ff: u32,
     pub n_expert: Option<u32>,
     pub n_expert_used: Option<u32>,
+    /// Width of one routed expert (`expert_feed_forward_length`).
+    pub n_ff_exp: Option<u32>,
+    pub n_expert_shared: Option<u32>,
     pub kv_layout: KvLayout,
     pub swa_window: Option<u32>,
     pub quant: Quant,
@@ -122,6 +127,16 @@ pub struct ModelInfo {
 impl ModelInfo {
     pub fn params_b(&self) -> f64 {
         self.n_params as f64 / 1e9
+    }
+
+    /// FFN activation width per token: the dense width, or the routed experts in use plus
+    /// shared experts, whichever is larger.
+    pub fn ffn_width(&self) -> u32 {
+        let moe = match (self.n_ff_exp, self.n_expert_used) {
+            (Some(ff), Some(used)) => ff * (used + self.n_expert_shared.unwrap_or(0)),
+            _ => 0,
+        };
+        self.n_ff.max(moe)
     }
 
     pub fn is_moe(&self) -> bool {
@@ -367,8 +382,13 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
         n_head_kv,
         head_dim: key_len,
         n_ctx_train,
+        n_ff: per_layer(g, &key("feed_forward_length"), n_layer)
+            .and_then(|v| v.into_iter().max())
+            .unwrap_or(0),
         n_expert,
         n_expert_used: n_expert.and(g.get_u32(&key("expert_used_count"))),
+        n_ff_exp: n_expert.and(g.get_u32(&key("expert_feed_forward_length"))),
+        n_expert_shared: n_expert.and(g.get_u32(&key("expert_shared_count"))),
         kv_layout,
         swa_window,
         quant: Quant::Gguf(quant),

@@ -5,19 +5,20 @@ expression: "render(QWEN3_8B, FakeHw::rtx_4090(), Some(32768), None)"
 WEIGHT   Qwen3 8B · qwen3 · Q4_K_M · 36 layers
   weights              4.59 GiB   36/36 layers + output head 0.48 GiB; token embeddings 0.33 GiB stay on CPU
   KV cache             4.50 GiB   f16: 36 layers x 32768 cells x (K 1024 + V 1024) x 2 B
-  compute buffer       0.42 GiB   n_ubatch 512 x (n_embd 4096 + n_vocab 151936) x 4 B + 128 MiB, flash attention
+  compute buffer       0.23 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 32768 + peak of attention 12 B x n_ubatch 512 x (n_embd 4096 + q 4096 + k 1024 + v 1024) + 2 B x ctx 32768 x (k + v); flash attention
   headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
   ------------------------------
-  GPU total           10.29 GiB   of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (NVML free; 0.49 GiB held by other processes)
+  GPU total           10.10 GiB   of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (NVML free; 0.49 GiB held by other processes)
   weights on CPU       0.33 GiB   token embeddings
-  host total           0.33 GiB   of 48.00 GiB available host memory
+  compute on CPU       0.06 GiB   mask 2 B x n_ubatch 512 x ctx 32768 + 16 B x n_ubatch x n_embd 4096
+  host total           0.39 GiB   of 48.00 GiB available host memory
 
 BALANCE  all 36 layers and the output head on GPU
   ctx 32768: requested with --ctx
   KV cache f16: f16 fits with every layer on GPU
   flash attention on: required for a quantised V cache and smaller compute buffers
   tried:
-    fits all layers on GPU, f16 KV                          GPU   10.29 GiB  host    0.33 GiB
+    fits all layers on GPU, f16 KV                          GPU   10.10 GiB  host    0.39 GiB
 
 COMMAND
   llama-server -m fixtures/gguf/qwen3-8b/Qwen3-8B-Q4_K_M.gguf -c 32768 -ngl 37 -fa on -np 1 --jinja

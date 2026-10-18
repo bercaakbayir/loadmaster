@@ -101,3 +101,72 @@ cpu = { model = 1252.16, kv = 256, compute = 76.02 }
 args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 0, kv = "f16" }
 gpu = { model = 0, kv = 0, compute = 0 }
 cpu = { model = 1518.32, kv = 256, compute = 76.02 }
+
+[[model]]
+name = "Qwen3 0.6B Q4_K_M"
+sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+paths = ["~/.ollama/models/blobs/sha256-7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"]
+source = "ollama pull qwen3:0.6b"
+llama_cpp = "0.7.0 (build 11669, commit 620d2225c), Homebrew"
+device = "Apple M2, 8 GB, Metal"
+observed_on = "2026-10-18"
+
+[[model.run]]
+args = { ctx = 4096, ubatch = 512, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 448, compute = 52.21 }
+cpu = { model = 83.46, kv = 0, compute = 12.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 896, compute = 72.21 }
+cpu = { model = 83.46, kv = 0, compute = 16.02 }
+
+[[model.run]]
+args = { ctx = 16384, ubatch = 512, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 1792, compute = 112.22 }
+cpu = { model = 83.46, kv = 0, compute = 24.02 }
+
+[[model.run]]
+args = { ctx = 32768, ubatch = 512, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 3584, compute = 192.23 }
+cpu = { model = 83.46, kv = 0, compute = 40.02 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 256, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 896, compute = 57.17 }
+cpu = { model = 83.46, kv = 0, compute = 8.01 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 1024, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 896, compute = 102.29 }
+cpu = { model = 83.46, kv = 0, compute = 32.04 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 2048, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 896, compute = 162.46 }
+cpu = { model = 83.46, kv = 0, compute = 64.07 }
+
+[[model.run]]
+args = { ctx = 32768, ubatch = 2048, flash_attn = true, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 3584, compute = 354.55 }
+cpu = { model = 83.46, kv = 0, compute = 160.07 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = false, ngl = 99, kv = "f16" }
+gpu = { model = 409.29, kv = 896, compute = 294.01 }
+cpu = { model = 83.46, kv = 0, compute = 28.01 }
+
+[[model.run]]
+args = { ctx = 8192, ubatch = 512, flash_attn = true, ngl = 10, kv = "f16" }
+gpu = { model = 215.31, kv = 288, compute = 70.21 }
+cpu = { kv = 608, compute = 36.02 }
+
+# The host machine reset while this ran: ~5.1 GiB of wired Metal buffers with ~1.1 GiB of
+# RAM free. llama.cpp's own projection: device 5121 MiB = 409 model + 4480 KV + 232 compute.
+# loadmaster 0.0.0 at commit f99c8ca said "fits"; any plan for this must be CannotFit.
+[[model.incident]]
+args = { ctx = 40960, ubatch = 512, flash_attn = true, ngl = 99, kv = "f16" }
+outcome = "system reset (out of memory)"
+gpu_usable_mib = 5461
+host_free_mib = 1130
+llama_cpp_projected_mib = 5121

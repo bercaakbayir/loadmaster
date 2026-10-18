@@ -49,8 +49,8 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
       },
       {
         "key": "compute",
-        "bytes": 453771264,
-        "detail": "n_ubatch 512 x (n_embd 4096 + n_vocab 151936) x 4 B + 128 MiB, flash attention"
+        "bytes": 125829120,
+        "detail": "16 MiB + mask 2 B x n_ubatch 512 x ctx 8192 + peak of FFN 16 B x n_ubatch 512 x ffn 12288; flash attention"
       },
       {
         "key": "headroom",
@@ -58,23 +58,29 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
         "detail": "NVIDIA driver and CUDA context (default 800 MiB)"
       }
     ],
-    "gpu_bytes": 7425392640,
+    "gpu_bytes": 7097450496,
     "host": [
       {
         "key": "weights_cpu",
         "bytes": 350060544,
         "detail": "token embeddings"
+      },
+      {
+        "key": "compute_cpu",
+        "bytes": 41943040,
+        "detail": "mask 2 B x n_ubatch 512 x ctx 8192 + 16 B x n_ubatch x n_embd 4096"
       }
     ],
-    "host_bytes": 350060544
+    "host_bytes": 392003584
   },
   "budget": 25232932864,
   "host_budget": 51539607552,
+  "host_need": 392003584,
   "trials": [
     {
       "label": "all layers on GPU, f16 KV",
-      "gpu_bytes": 7425392640,
-      "host_bytes": 350060544,
+      "gpu_bytes": 7097450496,
+      "host_bytes": 392003584,
       "fits": true
     }
   ],

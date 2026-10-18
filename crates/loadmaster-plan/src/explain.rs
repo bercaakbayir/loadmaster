@@ -14,6 +14,7 @@ fn label(key: &str) -> &'static str {
         "headroom" => "headroom",
         "weights_cpu" => "weights on CPU",
         "kv_cpu" => "KV on CPU",
+        "compute_cpu" => "compute on CPU",
         _ => "other",
     }
 }
@@ -106,14 +107,25 @@ pub fn explain(p: &Plan) -> String {
     )
     .unwrap();
     terms(&mut out, &p.footprint.host);
-    writeln!(
-        out,
-        "  {:<18}{:>11}   of {} available host memory",
-        "host total",
-        gib(p.footprint.host_bytes),
-        gib(p.host_budget)
-    )
-    .unwrap();
+    if p.gpu.memory == loadmaster_hw::MemoryKind::Unified {
+        writeln!(
+            out,
+            "  {:<18}{:>11}   of {} RAM free now (unified memory: GPU side minus headroom + host side)",
+            "RAM needed",
+            gib(p.host_need),
+            gib(p.host_budget)
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            out,
+            "  {:<18}{:>11}   of {} available host memory",
+            "host total",
+            gib(p.host_need),
+            gib(p.host_budget)
+        )
+        .unwrap();
+    }
     writeln!(out).unwrap();
 
     writeln!(out, "BALANCE  {}", placement_line(p)).unwrap();
@@ -153,15 +165,20 @@ pub fn no_fit(n: &NoFit, explain: bool) -> String {
         out,
         "does not fit: {} short on {} ({})",
         gib(n.short_by),
-        if n.limit == "gpu" {
-            n.gpu.name.as_str()
-        } else {
-            "host memory"
+        match (n.limit, n.gpu.memory) {
+            ("gpu", _) => n.gpu.name.as_str(),
+            (_, loadmaster_hw::MemoryKind::Unified) => "free RAM",
+            _ => "host memory",
         },
-        if n.limit == "gpu" {
-            format!("{} usable", gib(n.gpu.usable_bytes))
-        } else {
-            "even with every layer on the CPU".to_owned()
+        match (n.limit, n.gpu.memory) {
+            ("gpu", _) => format!("{} usable", gib(n.gpu.usable_bytes)),
+            (_, loadmaster_hw::MemoryKind::Unified) => {
+                format!(
+                    "unified memory: GPU and CPU share {}",
+                    gib(n.gpu.total_bytes)
+                )
+            }
+            _ => "even with every layer on the CPU".to_owned(),
         }
     )
     .unwrap();

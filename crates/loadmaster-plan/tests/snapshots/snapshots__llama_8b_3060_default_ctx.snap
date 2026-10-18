@@ -5,20 +5,21 @@ expression: "render(LLAMA_8B, FakeHw::rtx_3060_12g(), None, None)"
 WEIGHT   Meta Llama 3.1 8B Instruct · llama · Q4_K_M · 32 layers
   weights              4.54 GiB   32/32 layers + output head 0.40 GiB; token embeddings 0.28 GiB stay on CPU
   KV cache             4.25 GiB   q8_0: 32 layers x 65536 cells x (K 1024 + V 1024) x 34/32 B
-  compute buffer       0.38 GiB   n_ubatch 512 x (n_embd 4096 + n_vocab 128256) x 4 B + 128 MiB, flash attention
+  compute buffer       0.39 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 65536 + peak of attention 12 B x n_ubatch 512 x (n_embd 4096 + q 4096 + k 1024 + v 1024) + 2 B x ctx 65536 x (k + v); flash attention
   headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
   ------------------------------
-  GPU total            9.95 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  GPU total            9.96 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
   weights on CPU       0.28 GiB   token embeddings
-  host total           0.28 GiB   of 24.00 GiB available host memory
+  compute on CPU       0.09 GiB   mask 2 B x n_ubatch 512 x ctx 65536 + 16 B x n_ubatch x n_embd 4096
+  host total           0.37 GiB   of 24.00 GiB available host memory
 
 BALANCE  all 32 layers and the output head on GPU
   ctx 65536: not given; largest power of two below the training context 131072 that fits on GPU with q8_0 KV
   KV cache q8_0: f16 does not fit with every layer on GPU; q8_0 does
   flash attention on: required for a quantised V cache and smaller compute buffers
   tried:
-    over all layers on GPU, f16 KV                          GPU   13.70 GiB  host    0.28 GiB
-    fits all layers on GPU, q8_0 KV                         GPU    9.95 GiB  host    0.28 GiB
+    over all layers on GPU, f16 KV                          GPU   13.71 GiB  host    0.37 GiB
+    fits all layers on GPU, q8_0 KV                         GPU    9.96 GiB  host    0.37 GiB
 
 COMMAND
   llama-server -m fixtures/gguf/llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 65536 -ngl 33 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja

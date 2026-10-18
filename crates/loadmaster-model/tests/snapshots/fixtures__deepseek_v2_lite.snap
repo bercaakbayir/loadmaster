@@ -1,0 +1,17 @@
+---
+source: crates/loadmaster-model/tests/fixtures.rs
+expression: summary(& info)
+---
+name: Some("DeepSeek V2 Lite Chat")
+arch: deepseek2 (known: true) kv: Mla
+quant: Q4_K_M  params: 15.71B
+layers: 27  embd: 2048  vocab: 102400  heads: 16/16 x 192  ctx_train: 163840
+experts: Some(64) used Some(6)
+swa: window None, 0 of 27 layers
+weights: 10.571 GiB  (11350120448 bytes)
+embd: 0.110 GiB  output: 0.160 GiB (tied: false)  other: 0
+layer 0: 56788992 bytes (0 expert) k_dim 576 v_dim 512
+layer 26: 423204864 bytes (403701760 expert)
+template blake3: b726b61131c363d8971280697b6649f1431afe59fc70f380dfa6539b1b3b1ebf
+mmproj: none
+complete: false

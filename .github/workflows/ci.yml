@@ -27,6 +27,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo xtask check-deps
+      - run: cargo xtask gen-fixtures --check
 
   msrv:
     runs-on: ubuntu-latest

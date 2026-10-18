@@ -8,7 +8,7 @@ Pinned in `[workspace.dependencies]`; substituting any of these needs a new ADR.
 |---|---|---|
 | CLI | `clap` 4 (derive) | standard, generates help and completions |
 | Lockfile | `serde` + `toml` | human-diffable, committed file |
-| GGUF reads | `memmap2` | read headers and tensor tables without loading weights |
+| GGUF reads | std buffered reads (see ADR 0003) | header and tensor table only |
 | safetensors | `safetensors` | header parsing only |
 | Chat templates | `minijinja` | Jinja-compatible, with a llama.cpp shim |
 | NVIDIA | `nvml-wrapper` behind `cuda` feature | no CUDA toolkit needed to build the default binary |

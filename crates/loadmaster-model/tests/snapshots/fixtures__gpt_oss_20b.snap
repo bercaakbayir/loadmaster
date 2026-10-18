@@ -1,0 +1,17 @@
+---
+source: crates/loadmaster-model/tests/fixtures.rs
+expression: summary(& info)
+---
+name: Some("Gpt Oss 20b")
+arch: gpt-oss (known: true) kv: Gqa
+quant: MXFP4_MOE  params: 20.91B
+layers: 24  embd: 2880  vocab: 201088  heads: 64/8 x 64  ctx_train: 131072
+experts: Some(32) used Some(4)
+swa: window Some(128), 12 of 24 layers
+weights: 11.265 GiB  (12095790336 bytes)
+embd: 0.573 GiB  output: 0.573 GiB (tied: false)  other: 0
+layer 0: 452713344 bytes (424120320 expert) k_dim 512 v_dim 512
+layer 23: 452713344 bytes (424120320 expert)
+template blake3: b726b61131c363d8971280697b6649f1431afe59fc70f380dfa6539b1b3b1ebf
+mmproj: none
+complete: false

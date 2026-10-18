@@ -5,6 +5,8 @@ use std::process::Command;
 
 use anyhow::{Context, bail};
 
+mod fixtures;
+
 /// Workspace crates each crate may depend on (normal and dev). Anything not listed is a
 /// boundary violation; in particular serve and probe must never see each other.
 const ALLOWED: &[(&str, &[&str])] = &[
@@ -52,7 +54,11 @@ fn main() -> anyhow::Result<()> {
     let task = std::env::args().nth(1);
     match task.as_deref() {
         Some("check-deps") => check_deps(),
-        _ => bail!("usage: cargo xtask <check-deps>"),
+        Some("gen-fixtures") => {
+            let check = std::env::args().nth(2).as_deref() == Some("--check");
+            fixtures::generate(&workspace_root().join("fixtures/gguf"), check)
+        }
+        _ => bail!("usage: cargo xtask <check-deps | gen-fixtures [--check]>"),
     }
 }
 
@@ -96,4 +102,11 @@ fn check_deps() -> anyhow::Result<()> {
     } else {
         bail!("crate boundary violations:\n  {}", violations.join("\n  "))
     }
+}
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask lives in the workspace root")
+        .to_path_buf()
 }

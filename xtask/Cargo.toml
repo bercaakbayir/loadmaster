@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+loadmaster-model.workspace = true
 serde_json.workspace = true
 
 [lints]

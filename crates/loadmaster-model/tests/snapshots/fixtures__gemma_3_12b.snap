@@ -1,0 +1,17 @@
+---
+source: crates/loadmaster-model/tests/fixtures.rs
+expression: summary(& info)
+---
+name: Some("Gemma 3 12B It")
+arch: gemma3 (known: true) kv: Gqa
+quant: Q4_K_M  params: 11.77B
+layers: 48  embd: 3840  vocab: 262144  heads: 16/8 x 256  ctx_train: 131072
+experts: None used None
+swa: window Some(1024), 40 of 48 layers
+weights: 6.937 GiB  (7448116224 bytes)
+embd: 0.527 GiB  output: 0.527 GiB (tied: true)  other: 0
+layer 0: 143372288 bytes (0 expert) k_dim 2048 v_dim 2048
+layer 47: 143372288 bytes (0 expert)
+template blake3: 2bb606f0472d18f0eb35d4c0af12373fa057ba83556bdad4d4c52d80d2f7bc8d
+mmproj: 0.785 GiB 256 tokens (gemma3 projector pools to 256 tokens)
+complete: false

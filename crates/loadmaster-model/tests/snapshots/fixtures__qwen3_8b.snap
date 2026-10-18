@@ -1,0 +1,17 @@
+---
+source: crates/loadmaster-model/tests/fixtures.rs
+expression: summary(& info)
+---
+name: Some("Qwen3 8B")
+arch: qwen3 (known: true) kv: Gqa
+quant: Q4_K_M  params: 8.19B
+layers: 36  embd: 4096  vocab: 151936  heads: 32/8 x 128  ctx_train: 40960
+experts: None used None
+swa: window None, 0 of 36 layers
+weights: 4.913 GiB  (5274861568 bytes)
+embd: 0.326 GiB  output: 0.475 GiB (tied: false)  other: 0
+layer 0: 122618880 bytes (0 expert) k_dim 1024 v_dim 1024
+layer 35: 122618880 bytes (0 expert)
+template blake3: b726b61131c363d8971280697b6649f1431afe59fc70f380dfa6539b1b3b1ebf
+mmproj: none
+complete: false

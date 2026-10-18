@@ -1,0 +1,23 @@
+# cargo-dist release config. After editing, run `dist generate` to (re)write
+# .github/workflows/release.yml, then tag `vX.Y.Z` to release. See ADR 0006.
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.32.0"
+ci = "github"
+installers = ["shell", "homebrew"]
+# The Homebrew formula is pushed to this tap on release; it must exist and the release
+# job needs a HOMEBREW_TAP_TOKEN secret with write access to it.
+tap = "ratel-sh/homebrew-tap"
+publish-jobs = ["homebrew"]
+formula = "loadmaster"
+# glibc, not musl, on Linux: NVML is dlopen()ed at runtime (ADR 0006).
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+]
+install-path = "CARGO_HOME"
+install-updater = false

@@ -16,6 +16,7 @@ struct File {
 #[derive(Deserialize)]
 struct Model {
     name: String,
+    sha256: String,
     paths: Vec<String>,
     run: Vec<Run>,
     #[serde(default)]
@@ -51,7 +52,7 @@ struct Incident {
     args: Args,
     outcome: String,
     gpu_usable_mib: u64,
-    host_free_mib: u64,
+    host_available_mib: u64,
 }
 
 const MIB: f64 = (1 << 20) as f64;
@@ -60,6 +61,27 @@ fn expand(p: &str) -> PathBuf {
     match p.strip_prefix("~/") {
         Some(rest) => Path::new(&std::env::var("HOME").unwrap_or_default()).join(rest),
         None => PathBuf::from(p),
+    }
+}
+
+/// The model file, or its header from `cargo xtask fetch-headers`.
+fn locate(m: &Model) -> Option<PathBuf> {
+    let header = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../validation/headers")
+        .join(format!("{}.gguf", m.sha256));
+    m.paths
+        .iter()
+        .map(|p| expand(p))
+        .chain([header])
+        .find(|p| p.exists())
+}
+
+fn kv_type(name: &str) -> KvType {
+    match name {
+        "f16" => KvType::F16,
+        "q8_0" => KvType::Q8_0,
+        "q4_0" => KvType::Q4_0,
+        k => panic!("unknown kv type {k}"),
     }
 }
 
@@ -74,8 +96,11 @@ fn planner_matches_observed_buffers() {
     let file: File = toml::from_str(&std::fs::read_to_string(root).unwrap()).unwrap();
     let mut failures = Vec::new();
     for m in &file.model {
-        let Some(path) = m.paths.iter().map(|p| expand(p)).find(|p| p.exists()) else {
-            eprintln!("skip {}: not on disk", m.name);
+        let Some(path) = locate(m) else {
+            eprintln!(
+                "skip {}: not on disk; run `cargo xtask fetch-headers`",
+                m.name
+            );
             continue;
         };
         let info = ModelInfo::from_gguf(&path).unwrap();
@@ -95,12 +120,7 @@ fn planner_matches_observed_buffers() {
         );
         for r in &m.run {
             let a = &r.args;
-            let kv = match a.kv.as_str() {
-                "f16" => KvType::F16,
-                "q8_0" => KvType::Q8_0,
-                "q4_0" => KvType::Q4_0,
-                k => panic!("unknown kv type {k}"),
-            };
+            let kv = kv_type(&a.kv);
             let cfg = Config {
                 ctx: a.ctx,
                 n_seq: 1,
@@ -191,17 +211,23 @@ fn planner_refuses_recorded_incidents() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/observed.toml");
     let file: File = toml::from_str(&std::fs::read_to_string(root).unwrap()).unwrap();
     for m in &file.model {
-        let Some(path) = m.paths.iter().map(|p| expand(p)).find(|p| p.exists()) else {
+        let Some(path) = locate(m) else {
+            eprintln!(
+                "skip {}: not on disk; run `cargo xtask fetch-headers`",
+                m.name
+            );
             continue;
         };
         let info = ModelInfo::from_gguf(&path).unwrap();
         for inc in &m.incident {
             let mut hw = FakeHw::m2_8g().0;
             hw.gpus[0].usable_bytes = inc.gpu_usable_mib * MIB;
-            hw.host.available_bytes = inc.host_free_mib * MIB;
+            hw.host.available_bytes = inc.host_available_mib * MIB;
+            // The exact configuration that ran: same context, ubatch and KV type.
             let req = PlanRequest {
                 ctx: Some(inc.args.ctx),
                 n_ubatch: inc.args.ubatch,
+                kv: Some(kv_type(&inc.args.kv)),
                 ..Default::default()
             };
             let result = plan(&info, &hw, &hw.gpus[0], &req);

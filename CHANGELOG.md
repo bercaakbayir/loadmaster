@@ -67,3 +67,15 @@ All notable changes to this project are documented here. The format follows
   symlinks, missing blobs and non-generative models are reported, not fatal.
 - `loadmaster plan <name>` resolves names from the stores (`llama3.2:1b`, `org/repo`,
   `hf://org/repo/file.gguf`, or a unique file stem).
+- `lm` alias: a second binary in the `loadmaster` crate, so every install path has both.
+- Release config for cargo-dist (`dist-workspace.toml`): macOS arm64/x86_64 and Linux
+  x86_64/aarch64 glibc builds (glibc because NVML is dlopen()ed; ADR 0006), shell and
+  Homebrew installers.
+- Validation: `validation/cases.toml` (13 real cases from an M2 8 GB, 13/13 agree),
+  `cargo xtask validate [--markdown]`, `cargo xtask fetch-headers` (GGUF headers by HTTP range
+  request, no weights), `scripts/collect-case.sh` to record new cases safely, and
+  `docs/validation.md`.
+
+### Changed
+- macOS available memory is `kern.memorystatus_level` x RAM (the kernel's own figure),
+  not vm_stat's free + inactive, which refused runs that work (ADR 0005, amended).

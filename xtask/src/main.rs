@@ -6,7 +6,9 @@ use std::process::Command;
 use anyhow::{Context, bail};
 
 mod fixtures;
+mod headers;
 mod hf_fixtures;
+mod validate;
 
 /// Workspace crates each crate may depend on (normal and dev). Anything not listed is a
 /// boundary violation; in particular serve and probe must never see each other.
@@ -59,7 +61,14 @@ fn main() -> anyhow::Result<()> {
             let check = std::env::args().nth(2).as_deref() == Some("--check");
             fixtures::generate(&workspace_root().join("fixtures"), check)
         }
-        _ => bail!("usage: cargo xtask <check-deps | gen-fixtures [--check]>"),
+        Some("fetch-headers") => headers::fetch_all(&workspace_root()),
+        Some("validate") => {
+            let markdown = std::env::args().nth(2).as_deref() == Some("--markdown");
+            validate::run(&workspace_root(), markdown)
+        }
+        _ => bail!(
+            "usage: cargo xtask <check-deps | gen-fixtures [--check] | fetch-headers | validate [--markdown]>"
+        ),
     }
 }
 

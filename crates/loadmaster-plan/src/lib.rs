@@ -117,6 +117,8 @@ pub struct Plan {
     pub host_budget: u64,
     /// Host RAM this plan needs; on unified memory this includes the GPU side.
     pub host_need: u64,
+    /// Where the available host memory figure came from.
+    pub host_basis: String,
     pub trials: Vec<Trial>,
     pub warnings: Vec<String>,
     /// The launch command as argv.
@@ -547,6 +549,7 @@ fn search_plan(
         budget: gpu.usable_bytes,
         host_budget: s.host_budget,
         host_need,
+        host_basis: hw.host.available_basis.clone(),
         trials,
         warnings,
         argv: Vec::new(),

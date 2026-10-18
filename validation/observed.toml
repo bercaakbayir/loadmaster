@@ -8,6 +8,8 @@ name = "Llama 3.2 1B Instruct Q8_0"
 sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
 # Where it may be on disk; the first existing path is used.
 paths = ["~/.ollama/models/blobs/sha256-74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"]
+# Header only (cargo xtask fetch-headers): enough for the planner, no weights.
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
 llama_cpp = "0.7.0 (build 11669, commit 620d2225c), Homebrew"
 device = "Apple M2, 8 GB, Metal"
 observed_on = "2026-10-18"
@@ -106,6 +108,7 @@ cpu = { model = 1518.32, kv = 256, compute = 76.02 }
 name = "Qwen3 0.6B Q4_K_M"
 sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
 paths = ["~/.ollama/models/blobs/sha256-7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"]
+header_url = "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
 source = "ollama pull qwen3:0.6b"
 llama_cpp = "0.7.0 (build 11669, commit 620d2225c), Homebrew"
 device = "Apple M2, 8 GB, Metal"
@@ -168,5 +171,9 @@ cpu = { kv = 608, compute = 36.02 }
 args = { ctx = 40960, ubatch = 512, flash_attn = true, ngl = 99, kv = "f16" }
 outcome = "system reset (out of memory)"
 gpu_usable_mib = 5461
+# vm_stat free + inactive + speculative + purgeable at the time.
 host_free_mib = 1130
+# kern.memorystatus_level was not read at the time; 55% is an estimate from the 56-57%
+# read later in the same session (ADR 0005). The planner's check uses this figure.
+host_available_mib = 4505
 llama_cpp_projected_mib = 5121

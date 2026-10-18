@@ -11,7 +11,7 @@ WEIGHT   Gpt Oss 20b · gpt-oss · MXFP4_MOE · 24 layers · MoE
   GPU total           15.65 GiB   of 48.00 GiB usable on Apple M3 Max (Metal working-set default, 3/4 of RAM (estimated))
   weights on CPU       0.57 GiB   token embeddings
   compute on CPU       0.15 GiB   mask 2 B x n_ubatch 512 x ctx 131072 + 16 B x n_ubatch x n_embd 2880
-  RAM needed          14.87 GiB   of 32.00 GiB RAM free now (unified memory: GPU side minus headroom + host side)
+  RAM needed          14.87 GiB   of 32.00 GiB RAM available now (fake: 1/2 of RAM; unified memory: GPU side minus headroom + host side)
 
 BALANCE  all 24 layers and the output head on GPU
   ctx 131072: not given; the training context 131072 fits on GPU with f16 KV

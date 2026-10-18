@@ -77,6 +77,7 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
   "budget": 25232932864,
   "host_budget": 51539607552,
   "host_need": 392003584,
+  "host_basis": "fake: 3/4 of RAM",
   "trials": [
     {
       "label": "all layers on GPU, f16 KV",

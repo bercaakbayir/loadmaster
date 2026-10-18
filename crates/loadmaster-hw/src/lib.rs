@@ -57,6 +57,9 @@ impl Gpu {
 pub struct Host {
     pub total_bytes: u64,
     pub available_bytes: u64,
+    /// Where `available_bytes` came from.
+    #[serde(default)]
+    pub available_basis: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +131,7 @@ impl FakeHw {
             host: Host {
                 total_bytes: host_gib * GIB,
                 available_bytes: host_gib * GIB * 3 / 4,
+                available_basis: "fake: 3/4 of RAM".into(),
             },
         })
     }
@@ -148,6 +152,7 @@ impl FakeHw {
             host: Host {
                 total_bytes: total,
                 available_bytes: total / 2,
+                available_basis: "fake: 1/2 of RAM".into(),
             },
         })
     }
@@ -186,6 +191,7 @@ impl FakeHw {
             host: Host {
                 total_bytes: 32 * GIB,
                 available_bytes: 24 * GIB,
+                available_basis: "fake".into(),
             },
         })
     }

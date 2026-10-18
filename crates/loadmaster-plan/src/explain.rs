@@ -159,10 +159,11 @@ pub fn explain(p: &Plan) -> String {
     if p.gpu.memory == loadmaster_hw::MemoryKind::Unified {
         writeln!(
             out,
-            "  {:<18}{:>11}   of {} RAM free now (unified memory: GPU side minus headroom + host side)",
+            "  {:<18}{:>11}   of {} RAM available now ({}; unified memory: GPU side minus headroom + host side)",
             "RAM needed",
             gib(p.host_need),
-            gib(p.host_budget)
+            gib(p.host_budget),
+            p.host_basis
         )
         .unwrap();
     } else {

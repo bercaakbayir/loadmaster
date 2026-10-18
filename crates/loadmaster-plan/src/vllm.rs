@@ -258,6 +258,7 @@ pub(crate) fn plan(
         budget: gpu.usable_bytes,
         host_budget: host_budget(&hw.host),
         host_need: 0,
+        host_basis: hw.host.available_basis.clone(),
         trials,
         warnings,
         argv: Vec::new(),

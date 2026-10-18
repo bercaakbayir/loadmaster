@@ -1,0 +1,156 @@
+# Ground truth for the planner (spec task 1.11): real runs and whether they fit.
+#
+# truth = "fits"  the runtime loaded the model with these flags and served
+# truth = "oom"   it failed to allocate, or the machine ran out of memory
+# llmfit / llama_fit record what those tools predicted for the same case, when run
+# ("fits" | "no"); leave them out when not measured.
+#
+# Every case so far is from one Apple M2 8 GB on 2026-10-18 (llama.cpp build 11669,
+# full offload). host_available_mib is an estimate: kern.memorystatus_level was read at
+# 56-57% during the session, not at each run (ADR 0005). NVIDIA cases are still needed;
+# see docs/validation.md for how to collect them safely.
+#
+# Replay: cargo xtask fetch-headers && cargo xtask validate [--markdown]
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-4k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 4096
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-8k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 8192
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-16k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 16384
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-24k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 24576
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-32k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 32768
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-48k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 49152
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-64k-f16"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 65536
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "llama3.2-1b-q8_0-m2-8k-q8_0"
+model = "Llama 3.2 1B Q8_0"
+sha256 = "74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+header_url = "https://registry.ollama.ai/v2/library/llama3.2/blobs/sha256:74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45"
+runtime = "llama.cpp"
+ctx = 8192
+kv = "q8_0"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "qwen3-0.6b-q4_k_m-m2-4k-f16"
+model = "Qwen3 0.6B Q4_K_M"
+sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+header_url = "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+runtime = "llama.cpp"
+ctx = 4096
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "qwen3-0.6b-q4_k_m-m2-8k-f16"
+model = "Qwen3 0.6B Q4_K_M"
+sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+header_url = "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+runtime = "llama.cpp"
+ctx = 8192
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "qwen3-0.6b-q4_k_m-m2-16k-f16"
+model = "Qwen3 0.6B Q4_K_M"
+sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+header_url = "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+runtime = "llama.cpp"
+ctx = 16384
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "qwen3-0.6b-q4_k_m-m2-32k-f16"
+model = "Qwen3 0.6B Q4_K_M"
+sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+header_url = "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+runtime = "llama.cpp"
+ctx = 32768
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "fits"
+
+[[case]]
+id = "qwen3-0.6b-q4_k_m-m2-40k-f16"
+model = "Qwen3 0.6B Q4_K_M"
+sha256 = "7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+header_url = "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa"
+runtime = "llama.cpp"
+ctx = 40960
+kv = "f16"
+hw = { name = "Apple M2 8 GB", vendor = "apple", memory = "unified", total_mib = 8192, usable_mib = 5461, host_available_mib = 4505 }
+truth = "oom"

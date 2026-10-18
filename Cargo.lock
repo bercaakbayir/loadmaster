@@ -1084,8 +1084,12 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "loadmaster-hw",
  "loadmaster-model",
+ "loadmaster-plan",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

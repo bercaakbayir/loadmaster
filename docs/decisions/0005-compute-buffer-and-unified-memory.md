@@ -40,6 +40,15 @@ configuration now fits only if, in addition to the working-set limit,
 (GPU footprint - headroom) + host footprint <= RAM available now (vm_stat)
 ```
 
+"RAM available now" on macOS is `kern.memorystatus_level` (the kernel's memory-free
+percentage, as printed by `memory_pressure`) x RAM, falling back to vm_stat's free + inactive
++ speculative + purgeable. The vm_stat figure is far too low: during the session it read
+~1.1 GiB while runs needing ~3.5 GiB (Llama 3.2 1B, ctx 65536) and ~4.1 GiB (Qwen3 0.6B,
+ctx 32768) of wired memory ran fine, and the ~5.0 GiB run reset the machine. memorystatus
+read 56-57% (~4.5 GiB) in the same session, which separates all three. (Amended
+2026-10-18; the first version of this ADR used vm_stat and would have refused the two runs
+that worked.)
+
 Otherwise the result is `CannotFit` against "free RAM", with "free X GiB held by other
 processes" as a fix when that covers the gap. Partial offload does not help on unified
 memory and the search reports it as such. The incident is recorded in

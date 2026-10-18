@@ -75,10 +75,26 @@ fn host() -> Result<Host, Error> {
     let total_bytes: u64 = sysctl("hw.memsize")
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| err("hw.memsize unavailable"))?;
-    let available_bytes = vm_stat_available().unwrap_or(0);
+    // `kern.memorystatus_level` is the kernel's own "memory free" percentage (what
+    // `memory_pressure` prints and what jetsam acts on): it counts memory the OS can
+    // reclaim by compressing or paging, which vm_stat's free + inactive does not.
+    let (available_bytes, available_basis) = match sysctl("kern.memorystatus_level")
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&l| l <= 100)
+    {
+        Some(level) => (
+            total_bytes / 100 * level,
+            format!("kern.memorystatus_level {level}% of RAM"),
+        ),
+        None => (
+            vm_stat_available().unwrap_or(0),
+            "vm_stat free + inactive + speculative + purgeable".into(),
+        ),
+    };
     Ok(Host {
         total_bytes,
         available_bytes,
+        available_basis,
     })
 }
 
@@ -130,6 +146,7 @@ fn host() -> Result<Host, Error> {
     Ok(Host {
         total_bytes: kib("MemTotal:").ok_or_else(|| err("no MemTotal".into()))? * 1024,
         available_bytes: kib("MemAvailable:").unwrap_or(0) * 1024,
+        available_basis: "/proc/meminfo MemAvailable".into(),
     })
 }
 

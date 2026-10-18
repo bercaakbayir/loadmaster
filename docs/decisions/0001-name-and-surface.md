@@ -12,8 +12,8 @@ the same three jobs the tool does for a local LLM (fit, placement, conformance).
 
 - Crates: `loadmaster-{model,hw,plan,store,lock,serve,probe}`; the binary crate is `loadmaster`
   so `cargo install loadmaster` works. All names were free on crates.io on 2026-10-18.
-- Binary: `loadmaster`. Release archives also install an `lm` symlink. Docs always use
-  `loadmaster`.
+- Binary: `loadmaster`, plus an `lm` alias (a second binary, see ADR 0006). Docs always
+  use `loadmaster`.
 - Subcommands keep the spec's names: `scan gpu plan init add up down swap status import probe`.
   The analogy appears only in the README and as the `WEIGHT` / `BALANCE` / `PREFLIGHT`
   section headings of `--explain` output.

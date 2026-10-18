@@ -9,9 +9,17 @@ repository.workspace = true
 authors.workspace = true
 readme = "../../README.md"
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "loadmaster"
 path = "src/main.rs"
+
+# Short alias; same program (ADR 0001).
+[[bin]]
+name = "lm"
+path = "src/bin/lm.rs"
 
 [dependencies]
 loadmaster-model.workspace = true

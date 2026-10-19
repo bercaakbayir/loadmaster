@@ -23,6 +23,10 @@ pub const HEADROOM_APPLE: u64 = 1536 * MIB;
 pub const DEFAULT_UBATCH: u32 = 512;
 /// The smallest context the default-context search will pick.
 pub const MIN_DEFAULT_CTX: u32 = 4096;
+/// On unified memory, the share of available RAM a plan should leave unused. Free RAM
+/// falls as apps open, and wired Metal buffers cannot be paged out, so a plan that only
+/// just fits can freeze or restart the machine (see `validation/observed.toml`).
+pub const UNIFIED_RAM_MARGIN_PCT: u64 = 15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -221,6 +225,20 @@ impl Search<'_> {
         c.fp.gpu_bytes <= self.gpu.usable_bytes && self.host_need(c) <= self.host_budget
     }
 
+    /// RAM a plan should leave unused: [`UNIFIED_RAM_MARGIN_PCT`] of the available RAM on
+    /// unified memory, nothing on a dedicated GPU.
+    fn ram_margin(&self) -> u64 {
+        match self.gpu.memory {
+            MemoryKind::Unified => self.host_budget / 100 * UNIFIED_RAM_MARGIN_PCT,
+            MemoryKind::Dedicated => 0,
+        }
+    }
+
+    /// Fits and leaves the RAM margin.
+    fn fits_safely(&self, c: &Candidate) -> bool {
+        self.fits(c) && self.host_need(c) + self.ram_margin() <= self.host_budget
+    }
+
     fn trial(&self, label: String, c: &Candidate) -> Trial {
         Trial {
             label,
@@ -235,21 +253,30 @@ impl Search<'_> {
             .is_some_and(|c| self.fits(&c))
     }
 
+    fn full_fits_safely(&self, ctx: u32, kv: KvType) -> bool {
+        self.eval(Placement::full(self.model.n_layer), ctx, kv)
+            .is_some_and(|c| self.fits_safely(&c))
+    }
+
     /// Largest context (a multiple of 256) at which the model fits fully on the GPU with
     /// q8_0 or f16 KV, if any.
     fn max_full_ctx(&self, upper: u32) -> Option<u32> {
+        self.max_ctx_where(upper, Self::full_fits)
+    }
+
+    fn max_ctx_where(&self, upper: u32, ok: fn(&Self, u32, KvType) -> bool) -> Option<u32> {
         let kv = [KvType::Q8_0, KvType::F16]
             .into_iter()
             .find(|&kv| footprint::kv_type_valid(self.model, kv))?;
         let step = footprint::KV_PAD;
-        if !self.full_fits(step, kv) {
+        if !ok(self, step, kv) {
             return None;
         }
         let (mut lo, mut hi) = (1u32, upper.max(step) / step);
         // Footprint grows with ctx, so binary search on multiples of 256.
         while lo < hi {
             let mid = lo + (hi - lo).div_ceil(2);
-            if self.full_fits(mid * step, kv) {
+            if ok(self, mid * step, kv) {
                 lo = mid;
             } else {
                 hi = mid - 1;
@@ -434,11 +461,26 @@ fn search_plan(
     let n_layer = model.n_layer;
     let mut st = State::default();
 
-    // 1. Everything on the GPU, best KV type first.
+    // 1. Everything on the GPU, best KV type first. On unified memory a KV type that only
+    //    just fits is passed over for a smaller one (not q4_0) that leaves the RAM margin.
+    let safe_kv = kv_order.iter().copied().find(|&kv| {
+        (kv != KvType::Q4_0 || req.kv.is_some())
+            && s.eval(Placement::full(n_layer), ctx, kv)
+                .is_some_and(|c| s.fits_safely(&c))
+    });
+    let mut tight_kv = Vec::new();
     for &kv in &kv_order {
-        if let Some(c) = s.eval(Placement::full(n_layer), ctx, kv)
-            && st.consider(&s, format!("all layers on GPU, {} KV", kv.flag()), c)
-        {
+        let Some(c) = s.eval(Placement::full(n_layer), ctx, kv) else {
+            continue;
+        };
+        let label = format!("all layers on GPU, {} KV", kv.flag());
+        if safe_kv.is_some_and(|safe| safe != kv) && s.fits(&c) {
+            st.trials
+                .push(s.trial(label + " (under the RAM margin)", &c));
+            tight_kv.push(kv.flag());
+            continue;
+        }
+        if st.consider(&s, label, c) {
             break;
         }
     }
@@ -527,13 +569,32 @@ fn search_plan(
         return Err(no_fit(&s, model, ctx, closest, trials));
     };
 
-    let kv_reason = kv_reason(req.kv, &c, n_layer, &kv_order);
+    let mut kv_reason = kv_reason(req.kv, &c, n_layer, &kv_order);
+    if !tight_kv.is_empty() {
+        kv_reason = format!(
+            "{} fits but would leave under {UNIFIED_RAM_MARGIN_PCT}% of available RAM unused; {} leaves that margin",
+            tight_kv.join(" and "),
+            c.cfg.kv.flag()
+        );
+    }
     if c.cfg.kv == KvType::Q4_0 && req.kv.is_none() {
         warnings.push(
             "q4_0 KV cache measurably lowers output quality; consider a smaller --ctx or a smaller quant".into(),
         );
     }
     let host_need = s.host_need(&c);
+    if !s.fits_safely(&c) {
+        let spare = s.host_budget.saturating_sub(host_need);
+        let fix = match s.max_ctx_where(ctx.saturating_sub(1), Search::full_fits_safely) {
+            Some(safe) => format!("--ctx {safe} leaves the margin"),
+            None => "close other apps or use a smaller quant".into(),
+        };
+        warnings.push(format!(
+            "tight on RAM: leaves {} of {} available RAM unused, under the {UNIFIED_RAM_MARGIN_PCT}% safety margin; free RAM falls as apps open, and running out with Metal memory wired can freeze or restart the machine. {fix}",
+            gib(spare),
+            gib(s.host_budget)
+        ));
+    }
     let mut plan = Plan {
         model: summary(model),
         gpu: gpu.clone(),
@@ -609,21 +670,38 @@ fn default_ctx(s: &Search<'_>, kv_order: &[KvType]) -> (u32, String) {
         .copied()
         .filter(|kv| *kv != KvType::Q4_0)
         .collect();
-    for &ctx in &candidates {
-        if let Some(kv) = first_two.iter().find(|&&kv| s.full_fits(ctx, kv)) {
-            let reason = if ctx == train {
-                format!(
-                    "not given; the training context {train} fits on GPU with {} KV",
-                    kv.flag()
-                )
-            } else {
-                format!(
-                    "not given; largest power of two below the training context {train} that fits on GPU with {} KV",
-                    kv.flag()
-                )
-            };
-            return (ctx, reason);
+    let first = |ok: &dyn Fn(u32, KvType) -> bool| {
+        candidates.iter().find_map(|&ctx| {
+            first_two
+                .iter()
+                .find(|&&kv| ok(ctx, kv))
+                .map(|&kv| (ctx, kv))
+        })
+    };
+    // Prefer a context that leaves the RAM margin; failing that, one that fits at all
+    // (and gets the tight-on-RAM warning).
+    let safe = first(&|ctx, kv| s.full_fits_safely(ctx, kv));
+    let any = first(&|ctx, kv| s.full_fits(ctx, kv));
+    if let Some((ctx, kv)) = safe.or(any) {
+        let mut reason = if ctx == train {
+            format!(
+                "not given; the training context {train} fits on GPU with {} KV",
+                kv.flag()
+            )
+        } else {
+            format!(
+                "not given; largest power of two below the training context {train} that fits on GPU with {} KV",
+                kv.flag()
+            )
+        };
+        if let (Some((safe_ctx, _)), Some((any_ctx, _))) = (safe, any)
+            && any_ctx > safe_ctx
+        {
+            reason += &format!(
+                " and leaves {UNIFIED_RAM_MARGIN_PCT}% of available RAM unused ({any_ctx} fits, without that margin)"
+            );
         }
+        return (ctx, reason);
     }
     let ctx = train.min(MIN_DEFAULT_CTX);
     (

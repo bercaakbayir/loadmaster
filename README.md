@@ -63,7 +63,9 @@ Errors exit 3.
   (GQA, sliding-window layers, MLA). The planner follows llama.cpp's own placement
   (`-ngl` offloads the output head, then the last layers; `--n-cpu-moe` keeps routed experts
   of the first layers on the CPU), prefers f16 KV, then q8_0, then q4_0 with a warning, then
-  offloads experts before whole layers. vLLM plans solve `--gpu-memory-utilization` and the
+  offloads experts before whole layers. On Apple Silicon a plan must fit in the RAM free
+  right now and should leave 15% of it unused; one that cannot gets a `tight on RAM`
+  warning. vLLM plans solve `--gpu-memory-utilization` and the
   largest `--max-model-len`; exl3 plans emit a tabbyAPI config. Same inputs, same bytes out.
 - **Serve.** `up` starts runtimes on demand behind one proxy port, unloads the least recently
   used idle model when a request needs room (`keep_warm` models last, models mid-request

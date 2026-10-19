@@ -169,7 +169,7 @@ pub fn init(args: InitArgs) -> anyhow::Result<ExitCode> {
     if args.names.is_empty() && !args.all {
         bail!("name the models to include (see `loadmaster scan`), or pass --all");
     }
-    let snap = super::snapshot(args.hw.hw_file.as_deref())?;
+    let snap = super::snapshot(&args.hw)?;
     let gpu = super::pick_gpu(&snap, "auto")?;
     let scan = loadmaster_store::scan(&super::roots(Vec::new()));
     let chosen: Vec<&ModelInfo> = if args.all {
@@ -225,7 +225,7 @@ pub fn add(args: AddArgs) -> anyhow::Result<ExitCode> {
     let mut lock = Lockfile::load(&args.lock.lock)
         .with_context(|| "run `loadmaster init` first to create the lockfile".to_string())?;
     let m = super::open_model(&args.model)?;
-    let snap = super::snapshot(args.hw.hw_file.as_deref())?;
+    let snap = super::snapshot(&args.hw)?;
     let gpu = super::pick_gpu(&snap, "auto")?;
     let name = match args.name {
         Some(n) => {
@@ -276,7 +276,7 @@ pub fn update(args: PlanArgs) -> anyhow::Result<ExitCode> {
         .with_context(|| format!("no model `{}` in {}", args.model, args.lock.display()))?
         .clone();
     let m = Stores::default().resolve(&entry.source)?;
-    let snap = super::snapshot(args.hw.hw_file.as_deref())?;
+    let snap = super::snapshot(&args.hw)?;
     let gpu = super::pick_gpu(&snap, &args.gpu)?;
     let runtime =
         loadmaster_lock::runtime(&entry.runtime).context("unknown runtime in lockfile")?;

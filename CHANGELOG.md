@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased] (0.3.0 scope; not tagged)
 
+### Added (planning without the hardware)
+- `--pretend <hw>` on `plan`, `scan`, `gpu`, `init`, `add`: plan for a card from a built-in
+  catalog (`rtx 4090`, `a6000`), a Mac with its RAM (`m4 pro 48gb`), or a raw size (`24GB`,
+  `48GB-unified`), with optional host RAM (`rtx 3090+128GB`). `gpu --pretend list` prints the
+  catalog; `up` refuses it.
+
 ### Added (probe, verify, eval)
 - `loadmaster probe <url> --model <name>`: ten declarative YAML fixtures (template, tool
   single/parallel/nested/round-trip, strict/union/enum-pattern schemas, streamed tool calls,

@@ -116,9 +116,9 @@ struct JsonOut<'a> {
     issues: &'a [loadmaster_store::Issue],
 }
 
-pub fn run(path: Vec<PathBuf>, json: bool, hw_file: Option<&Path>) -> anyhow::Result<ExitCode> {
+pub fn run(path: Vec<PathBuf>, json: bool, hw: &crate::HwArgs) -> anyhow::Result<ExitCode> {
     let scan = loadmaster_store::scan(&super::roots(path));
-    let hw = super::snapshot(hw_file)?;
+    let hw = super::snapshot(hw)?;
     let gpu = hw.best_gpu();
     let rows: Vec<Row> = scan
         .entries

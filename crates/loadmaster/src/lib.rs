@@ -209,11 +209,16 @@ struct UpArgs {
 }
 
 #[derive(Args)]
-struct HwArgs {
+pub(crate) struct HwArgs {
+    /// Plan for hardware you don't have: a card (`rtx 4090`), a Mac (`m4 pro 48gb`) or a
+    /// size (`24GB`, `48GB-unified`), optionally with host RAM (`rtx 3090+128GB`).
+    /// `loadmaster gpu --pretend list` shows the catalog.
+    #[arg(long, global = true, conflicts_with = "hw_file")]
+    pub(crate) pretend: Option<String>,
     /// Read the hardware snapshot from a file (as written by `loadmaster gpu --json`)
     /// instead of detecting it. For reproducing plans and bug reports.
     #[arg(long, hide = true, global = true)]
-    hw_file: Option<PathBuf>,
+    pub(crate) hw_file: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -291,8 +296,8 @@ fn init_tracing(verbose: u8) {
 
 fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
-        Command::Scan { path, json, hw } => cmd::scan::run(path, json, hw.hw_file.as_deref()),
-        Command::Gpu { json, hw } => cmd::gpu::run(json, hw.hw_file.as_deref()),
+        Command::Scan { path, json, hw } => cmd::scan::run(path, json, &hw),
+        Command::Gpu { json, hw } => cmd::gpu::run(json, &hw),
         Command::Plan(args) if args.update => cmd::lock::update(args),
         Command::Plan(args) => cmd::plan::run(args),
         Command::Init(args) => cmd::lock::init(args),
@@ -306,7 +311,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             force,
             lock,
             hw,
-        }) => cmd::import::llama_swap(&config, &lock.lock, force, hw.hw_file.as_deref()),
+        }) => cmd::import::llama_swap(&config, &lock.lock, force, &hw),
         Command::Probe(args) => cmd::probe::run(args),
         Command::FakeRuntime(args) => cmd::fake::run(args),
     }

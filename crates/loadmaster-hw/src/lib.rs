@@ -3,14 +3,26 @@
 //! Everything downstream takes a [`HwSnapshot`] value, never a live provider, so planning
 //! is deterministic and testable with [`FakeHw`].
 
+pub mod catalog;
 mod system;
 
 use serde::{Deserialize, Serialize};
 
+pub use catalog::{PretendError, pretend};
 pub use system::SystemHw;
 
 pub const GIB: u64 = 1 << 30;
 pub const MIB: u64 = 1 << 20;
+
+/// `24 GiB`, `7.5 GiB`.
+fn gib_str(bytes: u64) -> String {
+    let g = bytes as f64 / GIB as f64;
+    if (g - g.round()).abs() < 0.05 {
+        format!("{g:.0} GiB")
+    } else {
+        format!("{g:.1} GiB")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

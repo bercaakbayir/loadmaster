@@ -16,7 +16,7 @@ enum JsonOut<'a> {
 
 pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
     let model = super::open_model(&args.model)?;
-    let snap = super::snapshot(args.hw.hw_file.as_deref())?;
+    let snap = super::snapshot(&args.hw)?;
     let gpu =
         match args.gpu.as_str() {
             "auto" => snap.best_gpu(),

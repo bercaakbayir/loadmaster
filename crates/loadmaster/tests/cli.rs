@@ -444,3 +444,35 @@ fn import_llama_swap_writes_a_valid_lockfile() {
     );
     assert!(text.contains("aliases = [\"coder\", \"gpt-4o\"]"));
 }
+
+#[test]
+fn pretend_plans_on_hardware_you_do_not_have() {
+    let o = run(&["plan", QWEN3_30B, "--ctx", "32768", "--pretend", "rtx 4090"]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        stdout(&o).contains("usable on NVIDIA GeForce RTX 4090 (pretend)"),
+        "{}",
+        stdout(&o)
+    );
+
+    let o = run(&["gpu", "--pretend", "m4 pro 48gb", "--json"]);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["gpus"][0]["memory"], "unified");
+    assert_eq!(v["host"]["total_bytes"], 48u64 << 30);
+
+    let o = run(&["gpu", "--pretend", "list"]);
+    assert!(stdout(&o).contains("NVIDIA GeForce RTX 5090"));
+
+    let o = run(&["plan", QWEN3_8B, "--pretend", "voodoo 5"]);
+    assert_eq!(o.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("unknown hardware"));
+
+    let o = run(&["up", "--pretend", "4090"]);
+    assert_eq!(o.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("--pretend is for planning"));
+}

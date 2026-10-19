@@ -13,9 +13,12 @@ use std::path::Path;
 use anyhow::Context;
 use loadmaster_hw::{HwProvider, HwSnapshot, SystemHw};
 
-/// The hardware snapshot: replayed from `--hw-file`, or detected.
-pub fn snapshot(hw_file: Option<&Path>) -> anyhow::Result<HwSnapshot> {
-    match hw_file {
+/// The hardware snapshot: `--pretend`, replayed from `--hw-file`, or detected.
+pub fn snapshot(hw: &crate::HwArgs) -> anyhow::Result<HwSnapshot> {
+    if let Some(spec) = &hw.pretend {
+        return Ok(loadmaster_hw::pretend(spec)?);
+    }
+    match hw.hw_file.as_deref() {
         Some(path) => {
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("reading {}", path.display()))?;

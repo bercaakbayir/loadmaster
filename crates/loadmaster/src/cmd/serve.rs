@@ -61,8 +61,13 @@ fn launch_argv(m: &Model, path: &Path, mmproj: Option<PathBuf>) -> Vec<String> {
 }
 
 pub fn up(args: UpArgs) -> anyhow::Result<ExitCode> {
+    if args.hw.pretend.is_some() {
+        anyhow::bail!(
+            "--pretend is for planning; `up` runs models on this machine's real hardware"
+        );
+    }
     let lock = Lockfile::load(&args.lock.lock)?;
-    let snap = super::snapshot(args.hw.hw_file.as_deref())?;
+    let snap = super::snapshot(&args.hw)?;
     let gpu = super::pick_gpu(&snap, "auto")?;
     if gpu.name != lock.host.gpu {
         eprintln!(

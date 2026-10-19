@@ -14,7 +14,7 @@ pub fn llama_swap(
     config: &Path,
     lock_path: &Path,
     force: bool,
-    hw_file: Option<&Path>,
+    hw: &crate::HwArgs,
 ) -> anyhow::Result<ExitCode> {
     if lock_path.exists() && !force {
         bail!(
@@ -26,7 +26,7 @@ pub fn llama_swap(
         std::fs::read_to_string(config).with_context(|| format!("reading {}", config.display()))?;
     let imported = llama_swap::parse(&text, |k| std::env::var(k).ok())
         .map_err(|e| anyhow::anyhow!("{}: {e}", config.display()))?;
-    let snap = super::snapshot(hw_file)?;
+    let snap = super::snapshot(hw)?;
     let gpu = snap.best_gpu().cloned();
     let mut lock = Lockfile::new(match &gpu {
         Some(g) => Host {

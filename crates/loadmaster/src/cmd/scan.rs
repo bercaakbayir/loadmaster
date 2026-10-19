@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use loadmaster_hw::{Gpu, HwSnapshot};
 use loadmaster_model::{Format, ModelInfo, Quant, Source};
-use loadmaster_plan::{Error, PlanRequest, Runtime, gib};
+use loadmaster_plan::{Error, KvType, PlanRequest, Runtime, gib};
 use serde::Serialize;
 
 const CTXS: [u32; 3] = [8192, 32768, 131072];
@@ -38,10 +38,22 @@ fn runtime_for(m: &ModelInfo) -> Runtime {
     }
 }
 
-fn fit(m: &ModelInfo, hw: &HwSnapshot, gpu: Option<&Gpu>, ctx: u32) -> Fit {
-    let Some(gpu) = gpu else { return Fit::Na };
+/// A fit that comes with a cost the table marks with `*`.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum Caveat {
+    /// Only with a q4_0 KV cache, which lowers output quality.
+    Q4Kv,
+    /// Leaves under the unified-memory RAM safety margin.
+    TightRam,
+}
+
+fn fit(m: &ModelInfo, hw: &HwSnapshot, gpu: Option<&Gpu>, ctx: u32) -> (Fit, Option<Caveat>) {
+    let Some(gpu) = gpu else {
+        return (Fit::Na, None);
+    };
     if ctx > m.n_ctx_train {
-        return Fit::Na;
+        return (Fit::Na, None);
     }
     let req = PlanRequest {
         ctx: Some(ctx),
@@ -49,10 +61,23 @@ fn fit(m: &ModelInfo, hw: &HwSnapshot, gpu: Option<&Gpu>, ctx: u32) -> Fit {
         ..PlanRequest::default()
     };
     match loadmaster_plan::plan(m, hw, gpu, &req) {
-        Ok(p) if p.placement.is_full(m.n_layer) => Fit::Gpu,
-        Ok(_) => Fit::Offload,
-        Err(Error::CannotFit(_)) => Fit::No,
-        Err(_) => Fit::Na,
+        Ok(p) => {
+            let caveat = if p.warnings.iter().any(|w| w.starts_with("tight on RAM")) {
+                Some(Caveat::TightRam)
+            } else if p.kv == KvType::Q4_0 {
+                Some(Caveat::Q4Kv)
+            } else {
+                None
+            };
+            let fit = if p.placement.is_full(m.n_layer) {
+                Fit::Gpu
+            } else {
+                Fit::Offload
+            };
+            (fit, caveat)
+        }
+        Err(Error::CannotFit(_)) => (Fit::No, None),
+        Err(_) => (Fit::Na, None),
     }
 }
 
@@ -79,6 +104,8 @@ struct Row<'a> {
     runtime: Option<&'static str>,
     /// Fit at 8k, 32k and 128k context.
     fits: Option<[Fit; 3]>,
+    /// What each fit costs, if anything.
+    caveats: Option<[Option<Caveat>; 3]>,
     error: Option<&'a str>,
 }
 
@@ -98,6 +125,7 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw_file: Option<&Path>) -> anyhow::Re
         .iter()
         .map(|e| {
             let info = e.info.as_deref().ok();
+            let fits = info.map(|m| CTXS.map(|c| fit(m, &hw, gpu, c)));
             Row {
                 name: &e.name,
                 path: &e.path,
@@ -113,7 +141,8 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw_file: Option<&Path>) -> anyhow::Re
                     .and_then(|m| m.chat_template.as_ref())
                     .map(|t| t.blake3.as_str()),
                 runtime: info.map(|m| runtime_for(m).name()),
-                fits: info.map(|m| CTXS.map(|c| fit(m, &hw, gpu, c))),
+                fits: fits.map(|f| f.map(|(fit, _)| fit)),
+                caveats: fits.map(|f| f.map(|(_, c)| c)),
                 error: e.info.as_ref().err().map(String::as_str),
             }
         })
@@ -154,6 +183,15 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw_file: Option<&Path>) -> anyhow::Re
         );
         for r in &rows {
             let fits = r.fits.unwrap_or([Fit::Na; 3]);
+            let caveats = r.caveats.unwrap_or([None; 3]);
+            let cell = |i: usize| {
+                let c = fits[i].cell();
+                if caveats[i].is_some() {
+                    format!("{c}*")
+                } else {
+                    c.to_owned()
+                }
+            };
             println!(
                 "{:<name_w$}  {:<8} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
                 truncate(r.name, name_w),
@@ -164,19 +202,30 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw_file: Option<&Path>) -> anyhow::Re
                 r.n_ctx_train.map_or("?".into(), |c| c.to_string()),
                 if r.mmproj.is_some() { "yes" } else { "-" },
                 r.chat_template_blake3.map_or("-", |h| &h[..8]),
-                fits[0].cell(),
-                fits[1].cell(),
-                fits[2].cell(),
+                cell(0),
+                cell(1),
+                cell(2),
             );
             if let Some(err) = r.error {
                 println!("{:<name_w$}  error: {err}", "");
             }
         }
         match gpu {
-            Some(g) => println!(
-                "\nfits on {}: gpu = entirely on GPU, offload = with CPU offload",
-                g.name
-            ),
+            Some(g) => {
+                println!(
+                    "\nfits on {}: gpu = entirely on GPU, offload = with CPU offload",
+                    g.name
+                );
+                if rows
+                    .iter()
+                    .any(|r| r.caveats.is_some_and(|c| c.iter().any(Option::is_some)))
+                {
+                    println!(
+                        "* only with a q4_0 KV cache (lower quality) or under the {}% free-RAM margin; `loadmaster plan <name> --ctx <n>` says which",
+                        loadmaster_plan::UNIFIED_RAM_MARGIN_PCT
+                    );
+                }
+            }
             None => println!("\nno GPU detected; fit columns are empty"),
         }
     }

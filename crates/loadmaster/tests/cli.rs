@@ -172,6 +172,7 @@ fn scan_lists_stores_and_plan_resolves_names() {
     let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(v["models"][0]["name"], "qwen3:8b");
     assert_eq!(v["models"][0]["fits"][0], "gpu");
+    assert_eq!(v["models"][0]["caveats"][0], serde_json::Value::Null);
 
     let o = run_in(
         &["plan", "qwen3:8b", "--ctx", "8192", "--hw-file", hw],
@@ -184,6 +185,44 @@ fn scan_lists_stores_and_plan_resolves_names() {
         String::from_utf8_lossy(&o.stderr)
     );
     assert!(stdout(&o).contains("sha256-abcd"));
+}
+
+#[test]
+fn scan_marks_fits_under_the_ram_margin() {
+    let home = ollama_home();
+    let mut hw = FakeHw::m3_max_64g();
+    // RAM Qwen3 8B needs at 32k on a 64 GB Mac with `available` bytes free.
+    let need = |hw: &FakeHw| {
+        let path = hw_file(&home, FakeHw(hw.0.clone()));
+        let o = run(&[
+            "plan",
+            QWEN3_8B,
+            "--ctx",
+            "32768",
+            "--json",
+            "--hw-file",
+            path.to_str().unwrap(),
+        ]);
+        let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+        v["plan"]["host_need"].as_u64().unwrap()
+    };
+    // f16 KV, then q8_0 once f16 no longer leaves the margin; then just above q8_0's need,
+    // so only a tight q8_0 fit is left (q4_0 is never picked to keep the margin).
+    hw.0.host.available_bytes = need(&hw);
+    let q8 = need(&hw);
+    hw.0.host.available_bytes = q8 + q8 / 20;
+    let path = hw_file(&home, hw);
+    let hw = path.to_str().unwrap();
+
+    let o = run_in(&["scan", "--json", "--hw-file", hw], home.path());
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["models"][0]["fits"][1], "gpu");
+    assert_eq!(v["models"][0]["caveats"][1], "tight_ram");
+    let out = stdout(&run_in(&["scan", "--hw-file", hw], home.path()));
+    assert!(
+        out.contains("gpu*") && out.contains("free-RAM margin"),
+        "{out}"
+    );
 }
 
 /// A fake home with one Ollama model (the Qwen3 8B fixture).

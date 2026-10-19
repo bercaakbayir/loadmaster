@@ -25,6 +25,8 @@ All notable changes to this project are documented here. The format follows
 - CLI errors exit 3, so 0-2 always mean a result.
 - Unified memory: plans keep 15% of available RAM unused when they can (smaller default
   context, q8_0 KV instead of f16), and warn `tight on RAM` when they cannot (ADR 0007).
+- `scan` marks fits that need a q4_0 KV cache or break the RAM margin with `*`; `--json`
+  has them as `caveats`.
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

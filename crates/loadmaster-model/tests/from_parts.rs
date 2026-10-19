@@ -98,6 +98,12 @@ fn hf_parts_match_disk() {
                 read("chat_template.jinja").map(|b| String::from_utf8(b).unwrap()),
                 json("tokenizer_config.json").as_ref(),
             ),
+            pooling: safetensors::sentence_transformers_pooling(
+                safetensors::SENTENCE_TRANSFORMERS_MARKERS
+                    .iter()
+                    .any(|m| dir.join(m).exists()),
+                json("1_Pooling/config.json").as_ref(),
+            ),
         })
         .unwrap();
         assert_eq!(mem, disk, "{}", dir.display());

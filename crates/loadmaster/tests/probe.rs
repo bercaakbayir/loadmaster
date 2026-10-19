@@ -237,3 +237,36 @@ fn up_verify_writes_verdicts_and_status_flags_stale_ones() {
     );
     drop(up);
 }
+
+#[test]
+fn probe_checks_embedding_endpoints() {
+    let (_ok, url) = fake("");
+    let o = Command::new(BIN)
+        .args(["probe", &url, "--model", "emb", "--embeddings", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["verdict"], "pass");
+    let ids: Vec<&str> = v["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["embed.shape", "embed.deterministic", "embed.batch"]);
+
+    let (_bad, url) = fake("embed_nondeterministic");
+    let o = Command::new(BIN)
+        .args(["probe", &url, "--model", "emb", "--embeddings", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["failures"][0], "embed_nondeterministic");
+}

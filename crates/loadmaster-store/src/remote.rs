@@ -467,6 +467,17 @@ impl Hub {
         } else {
             None
         };
+        let pooling_config = if has("1_Pooling/config.json") {
+            json("1_Pooling/config.json").ok()
+        } else {
+            None
+        };
+        let pooling = safetensors::sentence_transformers_pooling(
+            safetensors::SENTENCE_TRANSFORMERS_MARKERS
+                .iter()
+                .any(|m| has(m)),
+            pooling_config.as_ref(),
+        );
         let mut info = ModelInfo::from_hf_parts(HfParts {
             path: PathBuf::from(format!("hf://{repo}")),
             name: repo.rsplit('/').next().map(str::to_owned),
@@ -474,6 +485,7 @@ impl Hub {
             config_path: PathBuf::from(format!("hf://{repo}/config.json")),
             headers,
             chat_template: safetensors::chat_template_from(jinja, tokenizer.as_ref()),
+            pooling,
         })?;
         info.source = Source::HfRemote {
             repo: repo.into(),

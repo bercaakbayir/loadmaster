@@ -1,5 +1,7 @@
 //! `llama-server` command line.
 
+use loadmaster_model::ModelKind;
+
 use crate::{KvType, Plan};
 
 pub const BIN: &str = "llama-server";
@@ -47,8 +49,26 @@ pub fn argv(plan: &Plan) -> Vec<String> {
     }
     // One slot: the KV cache is planned for a single sequence of `ctx` tokens.
     a.extend(["-np".into(), "1".into()]);
-    if plan.model.chat_template_blake3.is_some() {
-        a.push("--jinja".into());
+    match plan.model.kind {
+        ModelKind::Embedding { pooling, encoder } => {
+            a.push("--embeddings".into());
+            if let Some(p) = pooling.flag() {
+                a.extend(["--pooling".into(), p.into()]);
+            }
+            // Both batches must hold a whole input (n_batch >= n_ubatch >= tokens): they
+            // are the longest input the server accepts, so always stated.
+            if encoder {
+                if plan.n_ubatch == crate::DEFAULT_UBATCH {
+                    a.extend(["-ub".into(), plan.n_ubatch.to_string()]);
+                }
+                a.extend(["-b".into(), plan.n_ubatch.to_string()]);
+            }
+        }
+        ModelKind::Chat => {
+            if plan.model.chat_template_blake3.is_some() {
+                a.push("--jinja".into());
+            }
+        }
     }
     a
 }

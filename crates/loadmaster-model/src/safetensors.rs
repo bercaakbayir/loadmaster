@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::arch::{self, KvLayout, SwaPattern};
-use crate::{ChatTemplate, Error, Format, Layer, Mmproj, ModelInfo, Quant, Source};
+use crate::{
+    ChatTemplate, Error, Format, Layer, Mmproj, ModelInfo, ModelKind, Pooling, Quant, Source,
+};
 
 const MAX_HEADER: u64 = 256 << 20;
 
@@ -26,6 +28,37 @@ pub struct HfParts {
     /// One per shard, in order.
     pub headers: Vec<StHeader>,
     pub chat_template: Option<ChatTemplate>,
+    /// Set for a sentence-transformers model (see [`sentence_transformers_pooling`]).
+    pub pooling: Option<Pooling>,
+}
+
+/// Files that mark a sentence-transformers (embedding) model directory.
+pub const SENTENCE_TRANSFORMERS_MARKERS: &[&str] = &[
+    "modules.json",
+    "sentence_bert_config.json",
+    "config_sentence_transformers.json",
+    "1_Pooling/config.json",
+];
+
+/// The pooling of a sentence-transformers model, from `1_Pooling/config.json` when there
+/// is one; `None` when the directory has no sentence-transformers markers.
+pub fn sentence_transformers_pooling(
+    has_marker: bool,
+    pooling_config: Option<&Value>,
+) -> Option<Pooling> {
+    if !has_marker {
+        return None;
+    }
+    let on = |k: &str| pooling_config.is_some_and(|c| c[k].as_bool() == Some(true));
+    Some(if on("pooling_mode_cls_token") {
+        Pooling::Cls
+    } else if on("pooling_mode_lasttoken") {
+        Pooling::Last
+    } else if on("pooling_mode_mean_tokens") {
+        Pooling::Mean
+    } else {
+        Pooling::Default
+    })
 }
 
 /// One tensor from a safetensors header.
@@ -202,6 +235,10 @@ fn gguf_arch(model_type: &str) -> &str {
         "gemma3" | "gemma3_text" => "gemma3",
         "gpt_oss" => "gpt-oss",
         "deepseek_v2" | "deepseek_v3" | "kimi_k2" => "deepseek2",
+        // Encoders, as llama.cpp's converter names them.
+        "bert" | "xlm-roberta" | "roberta" => "bert",
+        "nomic_bert" => "nomic-bert",
+        "modernbert" => "modern-bert",
         "glm4_moe" => "glm4moe",
         other => other,
     }
@@ -253,13 +290,13 @@ fn classify(name: &str) -> Part {
     }
     let mut parts = name.split('.');
     while let Some(p) = parts.next() {
-        if p == "layers" || p == "h" || p == "blocks" {
+        if p == "layers" || p == "layer" || p == "h" || p == "blocks" {
             if let Some(Ok(il)) = parts.next().map(str::parse::<usize>) {
                 return Part::Layer(il);
             }
         }
     }
-    if name.contains("embed_tokens") || name.contains("wte.") {
+    if name.contains("embed_tokens") || name.contains("wte.") || name.contains("word_embeddings") {
         Part::Embedding
     } else if name.starts_with("lm_head")
         || name.ends_with("model.norm.weight")
@@ -346,6 +383,12 @@ impl ModelInfo {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .filter(|n| !n.chars().all(|c| c.is_ascii_hexdigit()));
+        let pooling = sentence_transformers_pooling(
+            SENTENCE_TRANSFORMERS_MARKERS
+                .iter()
+                .any(|m| dir.join(m).exists()),
+            read_json(&dir.join("1_Pooling/config.json")).ok().as_ref(),
+        );
         Self::from_hf_parts(HfParts {
             path: dir.to_path_buf(),
             name,
@@ -353,6 +396,7 @@ impl ModelInfo {
             config_path,
             headers,
             chat_template: chat_template(dir),
+            pooling,
         })
     }
 
@@ -366,6 +410,7 @@ impl ModelInfo {
             config_path,
             headers,
             chat_template,
+            pooling,
         } = parts;
         let files: Vec<PathBuf> = headers.iter().map(|h| h.path.clone()).collect();
         let text = top.get("text_config").unwrap_or(&top);
@@ -492,7 +537,9 @@ impl ModelInfo {
                 Part::Layer(_) | Part::Other => other_bytes += t.n_bytes,
             }
         }
-        let output_tied = !has_lm_head;
+        let kind = ModelKind::detect(&arch, pooling);
+        // Embedding models end at pooling: no output head, so no tied copy either.
+        let output_tied = !has_lm_head && kind == ModelKind::Chat;
         if output_tied {
             output_bytes += embd_bytes;
         }
@@ -580,6 +627,7 @@ impl ModelInfo {
             chat_template,
             source: Source::Loose,
             complete: headers.iter().all(|h| h.complete),
+            kind,
         })
     }
 

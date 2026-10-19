@@ -20,5 +20,9 @@ pub fn argv(plan: &Plan, util_x100: u64) -> Vec<String> {
     if plan.kv == KvType::Fp8 {
         a.extend(["--kv-cache-dtype".into(), "fp8".into()]);
     }
+    // vLLM >= 0.10 serves embedding models with the pooling runner (`--task` is gone).
+    if plan.model.kind != loadmaster_model::ModelKind::Chat {
+        a.extend(["--runner".into(), "pooling".into()]);
+    }
     a
 }

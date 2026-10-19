@@ -78,7 +78,8 @@ same way tomorrow.
 | `loadmaster plan <name> --update` | Re-plan one lockfile entry and show the diff |
 | `loadmaster up [--verify]` / `down` / `swap <name>` / `status` | Serve every model on one OpenAI-compatible port, evicting by footprint |
 | `loadmaster import llama-swap <config.yaml>` | Convert a llama-swap config into `models.lock` |
-| `loadmaster probe <url> --model <name> [--json]` | Tool-call and structured-output conformance; exit 0 pass, 1 partial, 2 fail |
+| `loadmaster probe <url> --model <name> [--embeddings] [--json]` | Tool-call and structured-output conformance (or embedding checks); exit 0 pass, 1 partial, 2 fail |
+| `loadmaster report <model> [--ctx N]` | Run once, record real buffers and speed next to the prediction, get a prefilled issue to share |
 | `loadmaster probe eval <prompts.jsonl> --model a --model b` / `probe compare <run> <run>` | Your prompts, deterministic sampling, SQLite results, significance-tested diffs |
 
 `<model>` is a `.gguf` file, a Hugging Face model directory, a name from `scan`

@@ -282,7 +282,11 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
     let mut kv_cpu = 0u64;
     let mut gpu_layers = 0u32;
     for (il, layer) in (0u32..).zip(&model.layers) {
-        let kv = kv_bytes_per_cell(cfg.kv, layer)? * kv_cells(cfg, layer, model.swa_window);
+        let kv = if model.has_kv_cache() {
+            kv_bytes_per_cell(cfg.kv, layer)? * kv_cells(cfg, layer, model.swa_window)
+        } else {
+            0
+        };
         if placement.layer_on_gpu(il, n_layer) {
             gpu_layers += 1;
             kv_gpu += kv;
@@ -427,6 +431,12 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
 }
 
 fn kv_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
+    if !model.has_kv_cache() {
+        return format!(
+            "none: `{}` is an encoder, llama.cpp allocates no KV cache",
+            model.arch
+        );
+    }
     let ty = cfg.kv.flag();
     let gpu = &model.layers[(model.n_layer - gpu_layers) as usize..];
     let Some(sample) = gpu.first() else {

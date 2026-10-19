@@ -13,6 +13,8 @@ pub struct Target {
     pub name: String,
     pub template_blake3: Option<String>,
     pub quant: String,
+    /// Checked with the embedding probe instead of the chat fixtures.
+    pub embedding: bool,
 }
 
 /// The runtime and version a verdict applies to, e.g. `llama.cpp b6700-abc1234`.
@@ -39,7 +41,11 @@ pub async fn run(sup: Arc<Supervisor>, targets: Vec<Target>, listen: String, loc
             quant: Some(t.quant.clone()),
             ..Options::default()
         };
-        let report = loadmaster_probe::run::probe(&c, &fixtures, &opts, &issues).await;
+        let report = if t.embedding {
+            loadmaster_probe::embed::probe(&c, &t.name, 3).await
+        } else {
+            loadmaster_probe::run::probe(&c, &fixtures, &opts, &issues).await
+        };
         // The proxy hides the backend; detect the runtime on the backend port itself.
         let label = match sup
             .status()

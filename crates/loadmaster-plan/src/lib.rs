@@ -101,6 +101,13 @@ pub struct ModelSummary {
     /// with `--hf-repo`/`--hf-file`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hf_file: Option<String>,
+    /// Chat (omitted) or embedding.
+    #[serde(skip_serializing_if = "is_chat")]
+    pub kind: loadmaster_model::ModelKind,
+}
+
+fn is_chat(k: &loadmaster_model::ModelKind) -> bool {
+    *k == loadmaster_model::ModelKind::Chat
 }
 
 /// A config file a runtime reads instead of (or as well as) flags.
@@ -211,7 +218,12 @@ impl Search<'_> {
         Config {
             ctx,
             n_seq: 1,
-            n_ubatch: self.n_ubatch,
+            // An encoder takes each input in one batch (llama.cpp asserts n_ubatch >= tokens).
+            n_ubatch: if self.model.has_kv_cache() {
+                self.n_ubatch
+            } else {
+                ctx
+            },
             kv,
             // Always on: required for a quantised V cache, and the compute buffer shrinks.
             flash_attn: true,
@@ -350,6 +362,7 @@ fn summary(model: &ModelInfo) -> ModelSummary {
             Source::HfRemote { file, .. } => file.clone(),
             _ => None,
         },
+        kind: model.kind,
     }
 }
 
@@ -640,7 +653,9 @@ fn search_plan(
         alternatives: Vec::new(),
         mmproj_on_cpu: model.mmproj.is_some() && !req.mmproj_offload,
         speed: match req.runtime {
-            Runtime::LlamaCpp => speed::estimate(model, c.placement, &c.cfg, gpu),
+            Runtime::LlamaCpp if !model.is_embedding() => {
+                speed::estimate(model, c.placement, &c.cfg, gpu)
+            }
             _ => None,
         },
     };

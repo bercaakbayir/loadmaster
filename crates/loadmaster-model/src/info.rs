@@ -121,6 +121,91 @@ pub struct Mmproj {
     pub compute_basis: String,
 }
 
+/// What a model is served for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum ModelKind {
+    /// Text generation (chat, completion).
+    Chat,
+    /// Sentence embeddings. `encoder`: a non-causal encoder (BERT and friends), for which
+    /// llama.cpp allocates no KV cache and processes each input in one batch.
+    Embedding { pooling: Pooling, encoder: bool },
+}
+
+/// llama.cpp's `--pooling` (and the GGUF `{arch}.pooling_type` values, llama.h).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pooling {
+    /// Not stated: llama.cpp uses the model's own default.
+    Default,
+    None,
+    Mean,
+    Cls,
+    Last,
+    Rank,
+}
+
+impl Pooling {
+    /// From `{arch}.pooling_type`: -1 unspecified, 0 none, 1 mean, 2 cls, 3 last, 4 rank.
+    pub fn from_llama(v: i64) -> Self {
+        match v {
+            0 => Pooling::None,
+            1 => Pooling::Mean,
+            2 => Pooling::Cls,
+            3 => Pooling::Last,
+            4 => Pooling::Rank,
+            _ => Pooling::Default,
+        }
+    }
+
+    /// The `--pooling` value, when one is stated.
+    pub fn flag(self) -> Option<&'static str> {
+        Some(match self {
+            Pooling::Default => return None,
+            Pooling::None => "none",
+            Pooling::Mean => "mean",
+            Pooling::Cls => "cls",
+            Pooling::Last => "last",
+            Pooling::Rank => "rank",
+        })
+    }
+}
+
+/// Architectures for which llama.cpp creates no KV cache (`llama_model::create_memory`,
+/// src/llama-model.cpp at f174553): non-causal encoders.
+pub const ENCODER_ARCHS: &[&str] = &[
+    "bert",
+    "modern-bert",
+    "nomic-bert",
+    "nomic-bert-moe",
+    "neo-bert",
+    "jina-bert-v2",
+    "jina-bert-v3",
+    "eurobert",
+    "gemma-embedding",
+    "gemma-embedding2",
+];
+
+/// Embedding-only architectures that do keep a KV cache.
+const OTHER_EMBEDDING_ARCHS: &[&str] = &["t5encoder", "llama-embed"];
+
+impl ModelKind {
+    /// From the architecture and a stated pooling type: encoders and embedding
+    /// architectures always embed; any other architecture embeds when the file states a
+    /// pooling type (Qwen3-Embedding is `qwen3` with `pooling_type = last`).
+    pub fn detect(arch: &str, pooling: Option<Pooling>) -> Self {
+        let encoder = ENCODER_ARCHS.contains(&arch);
+        if encoder || OTHER_EMBEDDING_ARCHS.contains(&arch) || pooling.is_some() {
+            ModelKind::Embedding {
+                pooling: pooling.unwrap_or(Pooling::Default),
+                encoder,
+            }
+        } else {
+            ModelKind::Chat
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ModelInfo {
     pub path: PathBuf,
@@ -166,6 +251,7 @@ pub struct ModelInfo {
     pub source: Source,
     /// False when the file is shorter than its tensor table (partial download).
     pub complete: bool,
+    pub kind: ModelKind,
 }
 
 impl ModelInfo {
@@ -185,6 +271,16 @@ impl ModelInfo {
 
     pub fn is_moe(&self) -> bool {
         self.n_expert.is_some_and(|n| n > 1)
+    }
+
+    pub fn is_embedding(&self) -> bool {
+        matches!(self.kind, ModelKind::Embedding { .. })
+    }
+
+    /// False for encoders: llama.cpp allocates no KV cache, and an input must fit one
+    /// batch (`n_ubatch >= n_tokens`).
+    pub fn has_kv_cache(&self) -> bool {
+        !matches!(self.kind, ModelKind::Embedding { encoder: true, .. })
     }
 
     /// Read a GGUF model, all of its split parts, and a sibling `mmproj*.gguf` if present.
@@ -441,7 +537,16 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
             other_bytes += t.n_bytes;
         }
     }
-    let output_tied = !has_output_head;
+    let pooling = g
+        .get(&key("pooling_type"))
+        .and_then(|v| match *v {
+            Value::I32(i) => Some(i64::from(i)),
+            ref v => v.as_u64().map(|u| u as i64),
+        })
+        .map(Pooling::from_llama);
+    let kind = ModelKind::detect(&arch, pooling);
+    // Embedding models end at pooling: no output head, so no tied copy either.
+    let output_tied = !has_output_head && kind == ModelKind::Chat;
     if output_tied {
         output_bytes += token_embd_bytes.unwrap_or(0);
     }
@@ -500,6 +605,7 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
             .map(|s| ChatTemplate::new(s.to_owned())),
         source: Source::Loose,
         complete: parts.iter().all(|p| !p.is_truncated()),
+        kind,
     })
 }
 

@@ -49,3 +49,31 @@ The projector's weights and encoder go on the GPU by default, as in llama.cpp
 (`mmproj_use_gpu`). `plan --no-mmproj-offload` moves both terms to the host side and emits
 the flag; the alternatives offer it when the plan offloads layers, falls back to q4_0 KV, or
 is tight on RAM, and a no-fit plan suggests it when it would free enough.
+
+## Embeddings: detection
+
+- **GGUF**: an embedding model is one whose architecture embeds (`bert`, `modern-bert`,
+  `nomic-bert`, `nomic-bert-moe`, `neo-bert`, `jina-bert-v2`, `jina-bert-v3`, `eurobert`,
+  `gemma-embedding`, `gemma-embedding2`, `t5encoder`, `llama-embed`; src/llama-arch.cpp) or
+  that states `{arch}.pooling_type` (llama.h: -1 unspecified, 0 none, 1 mean, 2 cls, 3 last,
+  4 rank). The second rule catches decoder embedders such as Qwen3-Embedding (`qwen3`).
+- **Hugging Face directories**: sentence-transformers markers (`modules.json`,
+  `sentence_bert_config.json`, `config_sentence_transformers.json`, `1_Pooling/config.json`);
+  pooling from `1_Pooling/config.json`. The architecture name alone is not used: classifiers
+  (`GLiClassModel`) also end in `Model`. `scan` keeps such directories and still skips
+  other non-generative ones.
+- Embedding models have no output head, so no tied copy of the token embeddings.
+
+## Embeddings: planning and commands
+
+- **No KV cache for encoders.** llama.cpp's `create_memory` returns none for the encoder
+  architectures above (src/llama-model.cpp:2782); causal embedders keep theirs.
+- **One batch per input.** Non-causal attention asserts `n_ubatch >= n_tokens`
+  (llama-context.cpp:1898), so an encoder is planned with `n_ubatch = n_batch = ctx` and the
+  command states `-ub` and `-b`: they are the longest input the server accepts.
+- **Commands.** llama.cpp: `--embeddings` plus `--pooling` when the model states one, no
+  `--jinja`. vLLM: `--runner pooling` (`--task` no longer exists in v0.32.0).
+- **No speed estimate**: there is no generation.
+- **Probe.** `probe --embeddings` (and `up --verify` for embedding models) checks
+  `/v1/embeddings`: a finite non-empty vector, the same vector for the same text across runs
+  (core), and two different vectors for a batch of two texts.

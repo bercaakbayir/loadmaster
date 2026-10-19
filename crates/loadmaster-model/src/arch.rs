@@ -61,6 +61,16 @@ pub const ARCHS: &[ArchSpec] = &[
     gqa("granite"),
     gqa("glm4"),
     gqa("glm4moe"),
+    // Embedding encoders: no KV cache in llama.cpp, so no attention pattern matters.
+    gqa("bert"),
+    gqa("modern-bert"),
+    gqa("nomic-bert"),
+    gqa("nomic-bert-moe"),
+    gqa("neo-bert"),
+    gqa("jina-bert-v2"),
+    gqa("jina-bert-v3"),
+    gqa("eurobert"),
+    gqa("t5encoder"),
     ArchSpec {
         name: "gemma2",
         kv: KvLayout::Gqa,

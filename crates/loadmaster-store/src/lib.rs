@@ -264,10 +264,17 @@ fn models_in_dir(
     if let Some(name) = hf_name
         && is_hf_model_dir(dir)
     {
-        match non_generative(dir) {
+        // Sentence-transformers directories are embedding models: kept, whatever the
+        // architecture; other non-generative ones (classifiers, bare encoders) are skipped.
+        let embedding = loadmaster_model::safetensors::SENTENCE_TRANSFORMERS_MARKERS
+            .iter()
+            .any(|m| dir.join(m).exists());
+        match non_generative(dir).filter(|_| !embedding) {
             Some(arch) => out.issues.push(Issue {
                 path: dir.to_path_buf(),
-                problem: format!("{arch} is not a text-generation model; skipped"),
+                problem: format!(
+                    "{arch} is neither a text-generation nor a sentence-transformers embedding model; skipped"
+                ),
             }),
             None => out
                 .entries

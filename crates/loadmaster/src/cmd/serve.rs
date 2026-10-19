@@ -114,6 +114,7 @@ pub fn up(args: UpArgs) -> anyhow::Result<ExitCode> {
             name: m.name.clone(),
             template_blake3: info.chat_template.as_ref().map(|t| t.blake3.clone()),
             quant: info.quant.to_string(),
+            embedding: info.is_embedding(),
         });
         let env = m
             .env

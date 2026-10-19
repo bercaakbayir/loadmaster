@@ -8,6 +8,7 @@ pub mod client;
 pub mod compare;
 pub mod db;
 pub mod detect;
+pub mod embed;
 pub mod eval;
 pub mod fake;
 pub mod fixture;

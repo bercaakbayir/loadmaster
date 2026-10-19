@@ -41,6 +41,20 @@ pub fn run(a: ProbeArgs) -> anyhow::Result<ExitCode> {
     }
     let url = a.url.context("pass the endpoint URL")?;
     let model = a.model.context("pass --model")?;
+    if a.embeddings {
+        let c = client(&url, api_key(a.api_key_env.as_deref())?);
+        let report = rt()?.block_on(loadmaster_probe::embed::probe(
+            &c,
+            &model,
+            a.repeat.unwrap_or(3),
+        ));
+        if a.json {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            print!("{}", render(&report));
+        }
+        return Ok(ExitCode::from(report.exit_code()));
+    }
     let mut fixtures = match &a.fixtures {
         Some(dir) => fixture::load_dir(dir)?,
         None => fixture::builtin(),
@@ -130,7 +144,13 @@ pub fn render(r: &Report) -> String {
     let why = match r.verdict.as_str() {
         "pass" => "every fixture passed".to_owned(),
         "partial" => format!(
-            "core fixtures pass (tool.single, tool.result_roundtrip, schema.strict); failures: {}",
+            "core fixtures pass ({}); failures: {}",
+            r.results
+                .iter()
+                .filter(|x| x.core)
+                .map(|x| x.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
             r.failures.join(", ")
         ),
         _ => format!("failures: {}", r.failures.join(", ")),

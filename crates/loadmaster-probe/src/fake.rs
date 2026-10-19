@@ -48,6 +48,8 @@ pub enum Misbehavior {
     PatternIgnored,
     /// Stream ends mid tool call: no finish_reason, no `[DONE]`.
     StreamTruncated,
+    /// `/v1/embeddings` returns a different vector for the same text each time.
+    EmbedNondeterministic,
     /// Streamed argument fragments do not concatenate to valid JSON.
     StreamArgsSplitInvalid,
 }
@@ -68,6 +70,7 @@ impl Misbehavior {
         ("enum_ignored", Misbehavior::EnumIgnored),
         ("pattern_ignored", Misbehavior::PatternIgnored),
         ("stream_truncated", Misbehavior::StreamTruncated),
+        ("embed_nondeterministic", Misbehavior::EmbedNondeterministic),
         (
             "stream_args_split_invalid",
             Misbehavior::StreamArgsSplitInvalid,
@@ -143,7 +146,8 @@ pub fn router(cfg: Config) -> Router {
             get(|| async { axum::Json(json!({ "status": "ok" })) }),
         )
         .route("/v1/models", get(models))
-        .route("/v1/chat/completions", post(chat));
+        .route("/v1/chat/completions", post(chat))
+        .route("/v1/embeddings", post(embeddings));
     r = match state.cfg.impersonate {
         Impersonate::LlamaCpp => r
             .route("/props", get(props))
@@ -198,6 +202,38 @@ async fn props(State(f): St) -> Response {
         "model_path": format!("/models/{}.gguf", f.cfg.model),
     }))
     .into_response()
+}
+
+/// `/v1/embeddings`: a deterministic 384-dimensional vector per input, derived from the
+/// text, so equal inputs give equal vectors and different inputs differ.
+async fn embeddings(State(f): St, axum::Json(body): axum::Json<Value>) -> Response {
+    let inputs: Vec<String> = match &body["input"] {
+        Value::String(s) => vec![s.clone()],
+        Value::Array(a) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let nondeterministic = f
+        .cfg
+        .misbehave
+        .contains(&Misbehavior::EmbedNondeterministic);
+    let data: Vec<Value> = inputs
+        .iter()
+        .enumerate()
+        .map(|(i, text)| {
+            let mut seed = blake3::hash(text.as_bytes()).as_bytes().to_vec();
+            if nondeterministic {
+                seed[0] ^= f.requests.fetch_add(1, Ordering::Relaxed) as u8;
+            }
+            let v: Vec<f64> = (0..384)
+                .map(|j| f64::from(seed[j % 32]) / 255.0 - 0.5 + j as f64 * 1e-4)
+                .collect();
+            json!({ "object": "embedding", "index": i, "embedding": v })
+        })
+        .collect();
+    axum::Json(json!({ "object": "list", "model": f.cfg.model, "data": data })).into_response()
 }
 
 /// llama.cpp's native `/completion`: text plus `timings` at the configured speeds. A

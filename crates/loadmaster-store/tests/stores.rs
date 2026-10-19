@@ -227,22 +227,37 @@ fn missing_roots_are_empty_not_errors() {
 }
 
 #[test]
-fn skips_encoder_models_with_a_note() {
+fn keeps_embedding_models_and_skips_classifiers() {
     let t = machine();
-    let bert = t
-        .path()
-        .join("hf/models--BAAI--bge-small-en-v1.5/snapshots/r1");
-    std::fs::create_dir_all(&bert).unwrap();
+    let hf = t.path().join("hf");
+    // A sentence-transformers BERT (1_Pooling/ marks it): kept.
+    let bert = hf.join("models--BAAI--bge-small-en-v1.5/snapshots/r1");
+    std::fs::create_dir_all(bert.join("1_Pooling")).unwrap();
     std::fs::write(
         bert.join("config.json"),
         r#"{"architectures":["BertModel"],"model_type":"bert"}"#,
     )
     .unwrap();
+    std::fs::write(
+        bert.join("1_Pooling/config.json"),
+        r#"{"pooling_mode_cls_token":true}"#,
+    )
+    .unwrap();
     std::fs::write(bert.join("model.safetensors"), b"").unwrap();
+    // A classifier with no sentence-transformers files: skipped, with a note.
+    let cls = hf.join("models--org--classifier/snapshots/r1");
+    std::fs::create_dir_all(&cls).unwrap();
+    std::fs::write(
+        cls.join("config.json"),
+        r#"{"architectures":["GLiClassModel"],"model_type":"gliclass"}"#,
+    )
+    .unwrap();
+    std::fs::write(cls.join("model.safetensors"), b"").unwrap();
     let s = scan(&roots(t.path()));
-    assert!(s.entries.iter().all(|e| !e.name.contains("bge")));
+    assert!(s.entries.iter().any(|e| e.name.contains("bge")));
+    assert!(s.entries.iter().all(|e| !e.name.contains("classifier")));
     assert!(s.issues.iter().any(|i| {
         i.problem
-            .contains("BertModel is not a text-generation model")
+            .contains("GLiClassModel is neither a text-generation nor a sentence-transformers")
     }));
 }

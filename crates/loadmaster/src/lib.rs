@@ -118,6 +118,9 @@ struct ProbeArgs {
     /// Environment variable holding an API key to send as a bearer token.
     #[arg(long)]
     api_key_env: Option<String>,
+    /// Check an embedding model (`/v1/embeddings`) instead of chat and tool calling.
+    #[arg(long, conflicts_with_all = ["fixtures", "only", "expect_template"])]
+    embeddings: bool,
     #[command(subcommand)]
     sub: Option<ProbeCmd>,
 }

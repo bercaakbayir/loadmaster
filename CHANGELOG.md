@@ -29,6 +29,11 @@ All notable changes to this project are documented here. The format follows
   `clip_n_output_tokens` (dynamic-resolution types at their default maximum), a `vision
   compute` term for the encoder's buffer (estimate, unvalidated), `plan --no-mmproj-offload`
   and a "projector on CPU" alternative (ADR 0011).
+- Embedding models: detected from the architecture or a stated `pooling_type` (GGUF) and
+  sentence-transformers files (HF); `scan` lists them with a KIND column instead of skipping
+  them; encoders are planned with no KV cache and one batch per input; commands use
+  `--embeddings --pooling` (llama.cpp) and `--runner pooling` (vLLM); `probe --embeddings`
+  and `up --verify` check `/v1/embeddings` (ADR 0011).
 - Validation intake: an issue form for reports, `cargo xtask intake` turns one into a case
   (and optionally a speed point), CONTRIBUTING.md "Report a run". `scripts/collect-case.sh`
   is replaced by `loadmaster report` (ADR 0010).

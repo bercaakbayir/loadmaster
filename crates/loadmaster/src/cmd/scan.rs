@@ -98,6 +98,8 @@ struct Row<'a> {
     source: &'a Source,
     size_bytes: u64,
     arch: Option<&'a str>,
+    /// `chat`, `vision` (chat with a projector) or `embed`.
+    kind: Option<&'static str>,
     quant: Option<String>,
     n_ctx_train: Option<u32>,
     mmproj: Option<&'a Path>,
@@ -133,6 +135,15 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw: &crate::HwArgs) -> anyhow::Result
                 source: &e.source,
                 size_bytes: e.size_bytes,
                 arch: info.map(|m| m.arch.as_str()),
+                kind: info.map(|m| {
+                    if m.is_embedding() {
+                        "embed"
+                    } else if m.mmproj.is_some() {
+                        "vision"
+                    } else {
+                        "chat"
+                    }
+                }),
                 quant: info.map(|m| m.quant.to_string()),
                 n_ctx_train: info.map(|m| m.n_ctx_train),
                 mmproj: info
@@ -169,9 +180,10 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw: &crate::HwArgs) -> anyhow::Result
             .unwrap_or(4)
             .clamp(4, 60);
         println!(
-            "{:<name_w$}  {:<8} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
+            "{:<name_w$}  {:<8} {:<6} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
             "NAME",
             "SOURCE",
+            "KIND",
             "SIZE",
             "ARCH",
             "QUANT",
@@ -194,9 +206,10 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw: &crate::HwArgs) -> anyhow::Result
                 }
             };
             println!(
-                "{:<name_w$}  {:<8} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
+                "{:<name_w$}  {:<8} {:<6} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
                 truncate(r.name, name_w),
                 source_kind(r.source),
+                r.kind.unwrap_or("?"),
                 gib(r.size_bytes),
                 r.arch.unwrap_or("?"),
                 r.quant.as_deref().unwrap_or("?"),

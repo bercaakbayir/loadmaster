@@ -70,6 +70,21 @@ impl Client {
         Some((status, headers, body))
     }
 
+    /// POST a JSON body; the status (0 when the request failed) and the JSON response.
+    pub async fn post(&self, path: &str, body: Value) -> (u16, Value) {
+        let mut req = self.http.post(format!("{}{path}", self.base)).json(&body);
+        if let Some(k) = &self.api_key {
+            req = req.bearer_auth(k);
+        }
+        match req.send().await {
+            Ok(r) => {
+                let status = r.status().as_u16();
+                (status, r.json().await.unwrap_or(Value::Null))
+            }
+            Err(e) => (0, json!({ "error": { "message": e.to_string() } })),
+        }
+    }
+
     /// POST `/v1/chat/completions`.
     pub async fn chat(&self, body: Value) -> Exchange {
         let stream = body["stream"].as_bool().unwrap_or(false);

@@ -1358,9 +1358,11 @@ name = "loadmaster-store"
 version = "0.3.0"
 dependencies = [
  "loadmaster-model",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.21",
  "tracing",
 ]
 
@@ -3098,6 +3100,7 @@ dependencies = [
  "loadmaster-hw",
  "loadmaster-model",
  "loadmaster-plan",
+ "loadmaster-store",
  "serde",
  "serde_json",
  "toml",

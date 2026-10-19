@@ -1,13 +1,15 @@
 //! Read-only scanners for local model stores: the Hugging Face hub cache, Ollama's
 //! manifests and blobs, LM Studio's models directory, and loose directories.
 //!
-//! Nothing here writes, creates or follows anything outside the roots it is given.
-//! Environment variables are read by the caller and passed in as [`Roots`].
+//! The scanners write nothing and follow nothing outside the roots they are given.
+//! Environment variables are read by the caller and passed in as [`Roots`]. [`remote`]
+//! fetches headers from the Hugging Face Hub and writes only into the cache it is given.
 
 mod hf;
 mod lmstudio;
 mod loose;
 mod ollama;
+pub mod remote;
 
 use std::path::{Path, PathBuf};
 

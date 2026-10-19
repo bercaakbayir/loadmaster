@@ -11,6 +11,7 @@ anyhow.workspace = true
 loadmaster-model.workspace = true
 loadmaster-hw.workspace = true
 loadmaster-plan.workspace = true
+loadmaster-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

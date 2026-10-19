@@ -6,11 +6,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Context, bail};
-use loadmaster_model::gguf::{Error, Gguf};
-
-const START: u64 = 4 << 20;
-const LIMIT: u64 = 256 << 20;
+use anyhow::Context;
+use loadmaster_store::remote::Error;
 
 pub fn fetch_all(root: &Path) -> anyhow::Result<()> {
     let out_dir = root.join("validation/headers");
@@ -47,28 +44,25 @@ pub fn fetch_all(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fetch growing prefixes until the GGUF header parses.
+/// The GGUF header at `url`, fetched by growing range requests through `curl`.
 fn fetch_header(url: &str) -> anyhow::Result<Vec<u8>> {
-    let mut n = START;
-    loop {
-        let out = Command::new("curl")
-            .args(["-sSfL", "-r", &format!("0-{}", n - 1), url])
-            .output()
-            .context("running curl")?;
-        if !out.status.success() {
-            bail!(
-                "curl {url}: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
-        match Gguf::parse_bytes(&out.stdout) {
-            Ok(g) => {
-                let mut bytes = out.stdout;
-                bytes.truncate(g.data_offset as usize);
-                return Ok(bytes);
+    Ok(loadmaster_store::remote::fetch_gguf_header(
+        url,
+        |url, n| {
+            let out = Command::new("curl")
+                .args(["-sSfL", "-r", &format!("0-{}", n - 1), url])
+                .output()
+                .map_err(|e| Error::Http {
+                    url: url.to_owned(),
+                    reason: format!("running curl: {e}"),
+                })?;
+            if !out.status.success() {
+                return Err(Error::Http {
+                    url: url.to_owned(),
+                    reason: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+                });
             }
-            Err(Error::Truncated { .. }) if n < LIMIT && out.stdout.len() as u64 == n => n *= 2,
-            Err(e) => bail!("{url}: {e}"),
-        }
-    }
+            Ok(out.stdout)
+        },
+    )?)
 }

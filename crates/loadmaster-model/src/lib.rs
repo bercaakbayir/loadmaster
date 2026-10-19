@@ -7,6 +7,7 @@ pub mod arch;
 pub mod gguf;
 mod info;
 pub mod safetensors;
+pub mod vision;
 
 use std::path::PathBuf;
 

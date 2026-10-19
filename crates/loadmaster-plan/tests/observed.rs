@@ -127,6 +127,7 @@ fn planner_matches_observed_buffers() {
                 n_ubatch: a.ubatch,
                 kv,
                 flash_attn: a.flash_attn,
+                mmproj_on_gpu: true,
                 headroom: Headroom {
                     bytes: 0,
                     basis: String::new(),

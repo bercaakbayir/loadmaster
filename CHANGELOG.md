@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows
   `--from-log NAME` reports from a `loadmaster up` log instead. On unified memory it runs
   only plans that fit within the RAM margin and stops the run if free RAM falls below it;
   `--try-anyway` checks a "does not fit" prediction on a dedicated GPU.
+- Vision models: tokens per image for 20 projector types mirroring llama.cpp's
+  `clip_n_output_tokens` (dynamic-resolution types at their default maximum), a `vision
+  compute` term for the encoder's buffer (estimate, unvalidated), `plan --no-mmproj-offload`
+  and a "projector on CPU" alternative (ADR 0011).
 - Validation intake: an issue form for reports, `cargo xtask intake` turns one into a case
   (and optionally a speed point), CONTRIBUTING.md "Report a run". `scripts/collect-case.sh`
   is replaced by `loadmaster report` (ADR 0010).

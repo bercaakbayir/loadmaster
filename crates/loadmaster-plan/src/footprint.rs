@@ -104,6 +104,9 @@ pub struct Config {
     pub kv: KvType,
     pub flash_attn: bool,
     pub headroom: Headroom,
+    /// The vision projector's weights and encoder on the GPU (llama.cpp's default;
+    /// `--no-mmproj-offload` keeps them on the CPU).
+    pub mmproj_on_gpu: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -258,6 +261,16 @@ pub fn mmproj(model: &ModelInfo) -> Option<Term> {
     })
 }
 
+/// The vision encoder's compute buffer (an upper-bound estimate; ADR 0011).
+pub fn vision_compute(model: &ModelInfo) -> Option<Term> {
+    let m = model.mmproj.as_ref()?;
+    (m.compute_bytes > 0).then(|| Term {
+        key: "vision_compute",
+        bytes: m.compute_bytes,
+        detail: m.compute_basis.clone(),
+    })
+}
+
 /// The full footprint of `model` under `placement` and `cfg`. `None` when `cfg.kv` is not
 /// valid for this model's KV row widths.
 pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Option<Footprint> {
@@ -346,7 +359,16 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             }
         },
     ];
-    gpu.extend(mmproj(model));
+    let vision: Vec<Term> = mmproj(model)
+        .into_iter()
+        .chain(vision_compute(model))
+        .collect();
+    let (vision_gpu, vision_cpu) = if cfg.mmproj_on_gpu {
+        (vision, Vec::new())
+    } else {
+        (Vec::new(), vision)
+    };
+    gpu.extend(vision_gpu);
     gpu.push(Term {
         key: "headroom",
         bytes: cfg.headroom.bytes,
@@ -384,6 +406,17 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
         cfg,
         gpu_layers == n_layer && experts_cpu == 0,
     ));
+    for t in vision_cpu {
+        host.push(Term {
+            key: if t.key == "mmproj" {
+                "mmproj_cpu"
+            } else {
+                "vision_compute_cpu"
+            },
+            detail: format!("{} (on CPU: --no-mmproj-offload)", t.detail),
+            ..t
+        });
+    }
     let host_bytes = host.iter().map(|t| t.bytes).sum();
     Some(Footprint {
         gpu,
@@ -460,6 +493,7 @@ mod tests {
             n_ubatch: 512,
             kv,
             flash_attn: true,
+            mmproj_on_gpu: true,
             headroom: Headroom {
                 bytes: 0,
                 basis: String::new(),

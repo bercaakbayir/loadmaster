@@ -279,6 +279,9 @@ struct PlanArgs {
     ctx: Option<u32>,
     #[arg(long, value_enum, default_value_t = Runtime::LlamaCpp)]
     runtime: Runtime,
+    /// Keep a vision model's projector on the CPU (llama.cpp `--no-mmproj-offload`).
+    #[arg(long)]
+    no_mmproj_offload: bool,
     /// Print every term of the footprint and why each choice was made.
     #[arg(long)]
     explain: bool,

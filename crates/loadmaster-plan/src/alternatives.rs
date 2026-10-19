@@ -239,6 +239,33 @@ pub fn compute(
             }
         }
     }
+
+    // A vision projector that crowds the GPU: keep it on the CPU instead (images then
+    // encode on the CPU, slower, but the language model keeps the room).
+    if req.runtime == Runtime::LlamaCpp
+        && req.mmproj_offload
+        && let Some(m) = &model.mmproj
+        && (!base.placement.is_full(model.n_layer)
+            || base.kv == crate::KvType::Q4_0
+            || base.warnings.iter().any(|w| w.starts_with("tight on RAM")))
+    {
+        let r = PlanRequest {
+            mmproj_offload: false,
+            ..at_ctx(base.ctx)
+        };
+        out.extend(row(
+            "projector on CPU".into(),
+            model,
+            hw,
+            gpu,
+            &r,
+            base,
+            Some(format!(
+                "--no-mmproj-offload: frees {} of projector weights and encoder; images encode on the CPU",
+                crate::gib(m.weight_bytes + m.compute_bytes)
+            )),
+        ));
+    }
     out
 }
 

@@ -111,6 +111,14 @@ pub struct Mmproj {
     pub n_img_tokens: u32,
     /// How `n_img_tokens` was derived, for `--explain`.
     pub img_tokens_basis: String,
+    /// `clip.projector_type` (`gemma3`, `qwen2.5vl_merger`, ...), or `config.json` for a
+    /// safetensors model's built-in vision tower.
+    pub projector: String,
+    /// False when the projector type is not in loadmaster's table.
+    pub projector_known: bool,
+    /// Upper-bound estimate of the vision encoder's compute buffer (unvalidated).
+    pub compute_bytes: u64,
+    pub compute_basis: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -547,34 +555,25 @@ impl Mmproj {
                 reason: "not a vision projector (architecture is not `clip`)".into(),
             });
         }
-        let (n_img_tokens, img_tokens_basis) = image_tokens(g);
+        let p = crate::vision::Projector::from_gguf(g);
         Ok(Mmproj {
             weight_bytes: g.tensor_bytes(),
             path: path.to_path_buf(),
-            n_img_tokens,
-            img_tokens_basis,
+            n_img_tokens: p.n_img_tokens,
+            img_tokens_basis: format!("{}, {} projector", p.tokens_basis, p.kind),
+            compute_bytes: p.compute_bytes(),
+            compute_basis: compute_basis(&p),
+            projector: p.kind,
+            projector_known: p.known,
         })
     }
 }
 
-fn image_tokens(g: &Gguf) -> (u32, String) {
-    let projector = g.get_str("clip.projector_type").unwrap_or("unknown");
-    if projector == "gemma3" {
-        return (256, "gemma3 projector pools to 256 tokens".into());
-    }
-    match (
-        g.get_u32("clip.vision.image_size"),
-        g.get_u32("clip.vision.patch_size"),
-    ) {
-        (Some(size), Some(patch)) if patch > 0 => {
-            let side = size / patch;
-            (
-                side * side,
-                format!("({size}/{patch})^2 patches, {projector} projector"),
-            )
-        }
-        _ => (576, "default 576, mmproj states no image size".into()),
-    }
+pub(crate) fn compute_basis(p: &crate::vision::Projector) -> String {
+    format!(
+        "estimate, unvalidated: 16 MiB + mask 2 B x {}^2 patches + peak of FFN 16 B x patches x ffn {} and attention (width {}); flash attention (llama.cpp's default)",
+        p.warmup_patches, p.n_ff, p.n_embd
+    )
 }
 
 #[cfg(test)]

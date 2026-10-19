@@ -63,3 +63,27 @@ fn moe_reads_only_active_experts_and_offload_is_slower() {
     assert!(o.at[0].cpu_bytes > 0 && o.host_basis.is_some());
     assert!(o.at[0].tok_s_x10.1 < s.at[0].tok_s_x10.0);
 }
+
+#[test]
+fn a_crowding_projector_offers_the_cpu() {
+    // Gemma 3 12B at 64k on a 12 GB card: q4_0 KV with the projector on the GPU; keeping it
+    // on the CPU frees enough for q8_0.
+    let hw = FakeHw::rtx_3060_12g().0;
+    let m = model(GEMMA3_12B);
+    let p = plan(&m, &hw, &hw.gpus[0], &at(65536)).unwrap();
+    assert_eq!(p.kv, loadmaster_plan::KvType::Q4_0);
+    let alt = p
+        .alternatives
+        .iter()
+        .find(|a| a.label == "projector on CPU")
+        .expect("a projector-on-CPU alternative");
+    assert!(alt.fits);
+    let req = PlanRequest {
+        mmproj_offload: false,
+        ..at(65536)
+    };
+    let cpu = plan(&m, &hw, &hw.gpus[0], &req).unwrap();
+    assert!(cpu.argv.contains(&"--no-mmproj-offload".to_owned()));
+    assert!(cpu.footprint.term("mmproj").is_none());
+    assert!(cpu.footprint.host.iter().any(|t| t.key == "mmproj_cpu"));
+}

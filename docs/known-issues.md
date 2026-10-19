@@ -19,3 +19,11 @@ signature it shows should get an entry here (spec §9, v0.3.0).
 - Prompt processing is not estimated.
 
 Run `loadmaster report` on your hardware to add a measured point (ADR 0009).
+
+## Vision models (loadmaster's own)
+
+- The vision encoder's compute buffer is an estimate with no observed run behind it.
+- Dynamic-resolution projectors (Qwen-VL, Pixtral) are planned at llama.cpp's default
+  maximum image size; Llama 4 tiling is not modelled.
+
+`loadmaster report` on a vision model records the real buffers.

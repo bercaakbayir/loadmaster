@@ -25,6 +25,9 @@ pub fn argv(plan: &Plan) -> Vec<String> {
             "--mmproj"
         };
         a.extend([flag.into(), mmproj.clone()]);
+        if plan.mmproj_on_cpu {
+            a.push("--no-mmproj-offload".into());
+        }
     }
     a.extend(["-c".into(), plan.ctx.to_string()]);
     a.extend(["-ngl".into(), plan.placement.n_gpu_layers.to_string()]);

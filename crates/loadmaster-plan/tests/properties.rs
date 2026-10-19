@@ -41,7 +41,7 @@ proptest! {
         let m = &common::all_models()[model];
         let (lo, hi) = (a.min(b), a.max(b));
         let kv = KvType::ALL[kv];
-        let cfg = |ctx| Config { ctx, n_seq: 1, n_ubatch: 512, kv, flash_attn: true, headroom: Headroom { bytes: 0, basis: String::new() } };
+        let cfg = |ctx| Config { ctx, n_seq: 1, n_ubatch: 512, kv, flash_attn: true, mmproj_on_gpu: true, headroom: Headroom { bytes: 0, basis: String::new() } };
         let p = Placement { n_gpu_layers: ngl, n_cpu_moe: 0 };
         if let (Some(x), Some(y)) = (footprint::footprint(m, p, &cfg(lo)), footprint::footprint(m, p, &cfg(hi))) {
             prop_assert!(x.gpu_bytes <= y.gpu_bytes);

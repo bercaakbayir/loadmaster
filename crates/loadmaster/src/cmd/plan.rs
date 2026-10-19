@@ -34,6 +34,7 @@ pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
     let req = PlanRequest {
         ctx: args.ctx,
         runtime: args.runtime.into(),
+        mmproj_offload: !args.no_mmproj_offload,
         ..PlanRequest::default()
     };
     match loadmaster_plan::plan(&model, &snap, &gpu, &req) {

@@ -56,6 +56,8 @@ pub struct PlanRequest {
     pub kv: Option<KvType>,
     pub headroom: Option<u64>,
     pub n_ubatch: u32,
+    /// Put the vision projector on the GPU (llama.cpp's default).
+    pub mmproj_offload: bool,
 }
 
 impl Default for PlanRequest {
@@ -66,6 +68,7 @@ impl Default for PlanRequest {
             kv: None,
             headroom: None,
             n_ubatch: DEFAULT_UBATCH,
+            mmproj_offload: true,
         }
     }
 }
@@ -137,6 +140,9 @@ pub struct Plan {
     pub config_file: Option<ConfigFile>,
     /// Nearby configurations: more context, the next quant up and down, no offload.
     pub alternatives: Vec<Alternative>,
+    /// The vision projector stays on the CPU (`--no-mmproj-offload`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub mmproj_on_cpu: bool,
     /// Generation speed from memory bandwidth (llama.cpp only, when bandwidth is known).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<speed::Speed>,
@@ -190,6 +196,7 @@ struct Search<'a> {
     host_total: u64,
     headroom: Headroom,
     n_ubatch: u32,
+    mmproj_on_gpu: bool,
 }
 
 /// A configuration that was evaluated, with its footprint.
@@ -209,6 +216,7 @@ impl Search<'_> {
             // Always on: required for a quantised V cache, and the compute buffer shrinks.
             flash_attn: true,
             headroom: self.headroom.clone(),
+            mmproj_on_gpu: self.mmproj_on_gpu,
         }
     }
 
@@ -447,6 +455,7 @@ fn search_plan(
         host_total: hw.host.total_bytes,
         headroom: headroom_for(gpu, req.headroom),
         n_ubatch: req.n_ubatch,
+        mmproj_on_gpu: req.mmproj_offload,
     };
     let mut warnings = common_warnings(model);
 
@@ -629,6 +638,7 @@ fn search_plan(
         argv: Vec::new(),
         config_file: None,
         alternatives: Vec::new(),
+        mmproj_on_cpu: model.mmproj.is_some() && !req.mmproj_offload,
         speed: match req.runtime {
             Runtime::LlamaCpp => speed::estimate(model, c.placement, &c.cfg, gpu),
             _ => None,
@@ -774,6 +784,18 @@ fn no_fit(
     if let Some(max) = s.max_full_ctx(ctx.saturating_sub(1)) {
         fixes.push(Fix {
             summary: format!("use --ctx {max} (largest context that fits fully on GPU)"),
+        });
+    }
+    if s.mmproj_on_gpu
+        && limit == "gpu"
+        && let Some(m) = &model.mmproj
+        && m.weight_bytes + m.compute_bytes >= short_by
+    {
+        fixes.push(Fix {
+            summary: format!(
+                "keep the vision projector on the CPU with --no-mmproj-offload (frees {})",
+                gib(m.weight_bytes + m.compute_bytes)
+            ),
         });
     }
     let held = if limit == "gpu" {

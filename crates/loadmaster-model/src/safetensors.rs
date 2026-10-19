@@ -515,11 +515,31 @@ impl ModelInfo {
                 }
                 _ => (576, "default 576, config states no image size".to_owned()),
             };
+            let side = match (vc["image_size"].as_u64(), vc["patch_size"].as_u64()) {
+                (Some(size), Some(patch)) if patch > 0 => (size / patch) as u32,
+                _ => 24,
+            };
+            let u = |k: &str, d: u32| vc[k].as_u64().map_or(d, |v| v as u32);
+            let n_embd = u("hidden_size", 1024);
+            let p = crate::vision::Projector {
+                kind: "config.json".into(),
+                known: true,
+                n_img_tokens: tokens,
+                tokens_basis: basis.clone(),
+                warmup_patches: side * side,
+                n_embd,
+                n_head: u("num_attention_heads", (n_embd / 64).max(1)),
+                n_ff: u("intermediate_size", n_embd * 4),
+            };
             Mmproj {
                 path: dir.clone(),
                 weight_bytes: vision_bytes,
                 n_img_tokens: tokens,
                 img_tokens_basis: basis,
+                projector: p.kind.clone(),
+                projector_known: true,
+                compute_bytes: p.compute_bytes(),
+                compute_basis: crate::info::compute_basis(&p),
             }
         });
 

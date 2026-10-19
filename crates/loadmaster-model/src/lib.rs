@@ -11,7 +11,10 @@ pub mod safetensors;
 use std::path::PathBuf;
 
 pub use arch::{KvLayout, SwaPattern};
-pub use info::{ChatTemplate, Format, Layer, Mmproj, ModelInfo, Quant, Source};
+pub use info::{
+    ChatTemplate, Format, Layer, Mmproj, ModelInfo, Quant, Source, mmproj_candidates,
+    split_part_names,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

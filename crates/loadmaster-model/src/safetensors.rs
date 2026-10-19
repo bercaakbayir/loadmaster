@@ -15,6 +15,19 @@ use crate::{ChatTemplate, Error, Format, Layer, Mmproj, ModelInfo, Quant, Source
 
 const MAX_HEADER: u64 = 256 << 20;
 
+/// What [`ModelInfo::from_hf_parts`] builds a model from.
+pub struct HfParts {
+    /// Shown as the model's path (a directory, or an `hf://` spec).
+    pub path: PathBuf,
+    pub name: Option<String>,
+    pub config: Value,
+    /// Labels errors about `config`.
+    pub config_path: PathBuf,
+    /// One per shard, in order.
+    pub headers: Vec<StHeader>,
+    pub chat_template: Option<ChatTemplate>,
+}
+
 /// One tensor from a safetensors header.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StTensor {
@@ -45,17 +58,28 @@ impl StHeader {
         f.read_exact(&mut len).map_err(io)?;
         let n = u64::from_le_bytes(len);
         if n > MAX_HEADER || n + 8 > file_size {
-            return Err(Error::Inconsistent {
-                path: path.to_path_buf(),
-                reason: format!(
-                    "safetensors header length {n} is invalid for a {file_size}-byte file"
-                ),
-            });
+            return Err(bad_length(path, n, file_size));
         }
-        let mut buf = vec![0u8; n as usize];
-        f.read_exact(&mut buf).map_err(io)?;
+        let mut buf = len.to_vec();
+        buf.resize(8 + n as usize, 0);
+        f.read_exact(&mut buf[8..]).map_err(io)?;
+        Self::from_bytes(path, &buf, file_size)
+    }
+
+    /// Parse a header already in memory: the 8-byte length and the JSON after it. `path`
+    /// labels errors; `file_size` is the whole file's size, for [`StHeader::complete`].
+    pub fn from_bytes(path: &Path, bytes: &[u8], file_size: u64) -> Result<Self, Error> {
+        let n = bytes
+            .get(..8)
+            .map_or(0, |b| u64::from_le_bytes(b.try_into().expect("8 bytes")));
+        let Some(buf) = bytes
+            .get(8..8 + n as usize)
+            .filter(|_| n > 0 && n <= MAX_HEADER)
+        else {
+            return Err(bad_length(path, n, file_size));
+        };
         let header: serde_json::Map<String, Value> =
-            serde_json::from_slice(&buf).map_err(|e| Error::Inconsistent {
+            serde_json::from_slice(buf).map_err(|e| Error::Inconsistent {
                 path: path.to_path_buf(),
                 reason: format!("safetensors header is not JSON: {e}"),
             })?;
@@ -100,23 +124,37 @@ impl StHeader {
     }
 }
 
+fn bad_length(path: &Path, n: u64, file_size: u64) -> Error {
+    Error::Inconsistent {
+        path: path.to_path_buf(),
+        reason: format!("safetensors header length {n} is invalid for a {file_size}-byte file"),
+    }
+}
+
+/// The shard file names `model.safetensors.index.json` lists, sorted and deduplicated.
+pub fn index_shards(index: &Value) -> Vec<String> {
+    let mut files: Vec<String> = index["weight_map"]
+        .as_object()
+        .map(|m| {
+            m.values()
+                .filter_map(|f| f.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    files.dedup();
+    files
+}
+
 /// The safetensors files of a model directory: from `model.safetensors.index.json` when
 /// present, else every `*.safetensors` file, sorted by name.
 fn shard_files(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     let index = dir.join("model.safetensors.index.json");
     if index.exists() {
-        let v = read_json(&index)?;
-        let mut files: Vec<String> = v["weight_map"]
-            .as_object()
-            .map(|m| {
-                m.values()
-                    .filter_map(|f| f.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
-        files.sort();
-        files.dedup();
-        let files: Vec<PathBuf> = files.into_iter().map(|f| dir.join(f)).collect();
+        let files: Vec<PathBuf> = index_shards(&read_json(&index)?)
+            .into_iter()
+            .map(|f| dir.join(f))
+            .collect();
         if let Some(missing) = files.iter().find(|f| !f.exists()) {
             return Err(Error::Split {
                 path: missing.clone(),
@@ -254,11 +292,22 @@ fn quant(cfg: &Cfg<'_>, dominant_dtype: &str) -> Quant {
 }
 
 fn chat_template(dir: &Path) -> Option<ChatTemplate> {
-    if let Ok(text) = std::fs::read_to_string(dir.join("chat_template.jinja")) {
+    chat_template_from(
+        std::fs::read_to_string(dir.join("chat_template.jinja")).ok(),
+        read_json(&dir.join("tokenizer_config.json")).ok().as_ref(),
+    )
+}
+
+/// The chat template from `chat_template.jinja` if there is one, else from
+/// `tokenizer_config.json` (a string, or a list of named templates).
+pub fn chat_template_from(
+    jinja: Option<String>,
+    tokenizer_config: Option<&Value>,
+) -> Option<ChatTemplate> {
+    if let Some(text) = jinja {
         return Some(ChatTemplate::new(text));
     }
-    let v = read_json(&dir.join("tokenizer_config.json")).ok()?;
-    match &v["chat_template"] {
+    match &tokenizer_config?["chat_template"] {
         Value::String(s) => Some(ChatTemplate::new(s.clone())),
         Value::Array(named) => named
             .iter()
@@ -288,6 +337,37 @@ impl ModelInfo {
             });
         }
         let top = read_json(&config_path)?;
+        let files = shard_files(dir)?;
+        let headers: Vec<StHeader> = files
+            .iter()
+            .map(|f| StHeader::open(f))
+            .collect::<Result<_, _>>()?;
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .filter(|n| !n.chars().all(|c| c.is_ascii_hexdigit()));
+        Self::from_hf_parts(HfParts {
+            path: dir.to_path_buf(),
+            name,
+            config: top,
+            config_path,
+            headers,
+            chat_template: chat_template(dir),
+        })
+    }
+
+    /// Build from a model's `config.json` and safetensors headers already in memory (for
+    /// headers fetched from the Hub). Each header's `path` becomes an entry of `files`.
+    pub fn from_hf_parts(parts: HfParts) -> Result<Self, Error> {
+        let HfParts {
+            path: dir,
+            name,
+            config: top,
+            config_path,
+            headers,
+            chat_template,
+        } = parts;
+        let files: Vec<PathBuf> = headers.iter().map(|h| h.path.clone()).collect();
         let text = top.get("text_config").unwrap_or(&top);
         let cfg = Cfg { top: &top, text };
         let missing = |key: &str| Error::MissingKey {
@@ -352,12 +432,6 @@ impl ModelInfo {
             }
         };
         let swa_window = window.filter(|_| swa_layers.contains(&true));
-
-        let files = shard_files(dir)?;
-        let headers: Vec<StHeader> = files
-            .iter()
-            .map(|f| StHeader::open(f))
-            .collect::<Result<_, _>>()?;
 
         let mut layers: Vec<Layer> = (0..n_layer as usize)
             .map(|il| {
@@ -442,7 +516,7 @@ impl ModelInfo {
                 _ => (576, "default 576, config states no image size".to_owned()),
             };
             Mmproj {
-                path: dir.to_path_buf(),
+                path: dir.clone(),
                 weight_bytes: vision_bytes,
                 n_img_tokens: tokens,
                 img_tokens_basis: basis,
@@ -450,13 +524,10 @@ impl ModelInfo {
         });
 
         Ok(ModelInfo {
-            path: dir.to_path_buf(),
+            path: dir,
             files,
             format: Format::Safetensors,
-            name: dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .filter(|n| !n.chars().all(|c| c.is_ascii_hexdigit())),
+            name,
             arch,
             arch_known: spec.is_some(),
             n_params,
@@ -486,7 +557,7 @@ impl ModelInfo {
             output_tied,
             other_bytes,
             mmproj,
-            chat_template: chat_template(dir),
+            chat_template,
             source: Source::Loose,
             complete: headers.iter().all(|h| h.complete),
         })

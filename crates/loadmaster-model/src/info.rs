@@ -186,6 +186,58 @@ impl ModelInfo {
         info.mmproj = find_mmproj(path, &info.files)?;
         Ok(info)
     }
+
+    /// Build from GGUF headers already in memory, every part of a split model in order (for
+    /// headers fetched from the Hub). Each part's `path` and `file_size` must be set by the
+    /// caller: `path` is what gets printed, `file_size` decides [`ModelInfo::complete`].
+    pub fn from_gguf_parts(path: impl AsRef<Path>, parts: &[Gguf]) -> Result<Self, Error> {
+        let path = path.as_ref();
+        let first = parts.first().ok_or_else(|| Error::Split {
+            path: path.to_path_buf(),
+            reason: "no parts".into(),
+        })?;
+        if first.get_str("general.architecture") == Some("clip") {
+            return Err(Error::IsProjector {
+                path: path.to_path_buf(),
+            });
+        }
+        let count = first.get_u32("split.count").unwrap_or(1) as usize;
+        if count.max(1) != parts.len() {
+            return Err(Error::Split {
+                path: path.to_path_buf(),
+                reason: format!("header says {count} parts, {} given", parts.len()),
+            });
+        }
+        build(path, parts)
+    }
+}
+
+/// The file names of every part of a split GGUF, given any one of them and its
+/// `split.count`; `None` when the name does not follow `<name>-00001-of-00003.gguf`.
+pub fn split_part_names(file_name: &str, count: u32) -> Option<Vec<String>> {
+    let prefix = split_prefix(file_name, count)?;
+    Some(
+        (1..=count)
+            .map(|no| format!("{prefix}-{no:05}-of-{count:05}.gguf"))
+            .collect(),
+    )
+}
+
+/// Vision projector candidates among `names` (files next to a model), best first: names
+/// containing `mmproj` and ending in `.gguf`, F16 ones first, then by name.
+pub fn mmproj_candidates<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut c: Vec<&str> = names
+        .into_iter()
+        .filter(|n| {
+            let n = n.to_ascii_lowercase();
+            n.contains("mmproj") && n.ends_with(".gguf")
+        })
+        .collect();
+    c.sort_by_key(|n| {
+        let lower = n.to_ascii_lowercase();
+        (!lower.contains("f16"), lower)
+    });
+    c
 }
 
 /// Load every part of a split GGUF (`name-00001-of-00003.gguf`). `first` is the file the
@@ -460,38 +512,35 @@ fn find_mmproj(path: &Path, model_files: &[PathBuf]) -> Result<Option<Mmproj>, E
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(None);
     };
-    let mut candidates: Vec<PathBuf> = entries
+    let names: Vec<String> = entries
         .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            let name = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            name.contains("mmproj") && name.ends_with(".gguf")
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| {
+            !model_files
+                .iter()
+                .any(|m| m.file_name().is_some_and(|f| f == n.as_str()))
         })
-        .filter(|p| !model_files.iter().any(|m| m.file_name() == p.file_name()))
-        .map(|p| path.with_file_name(p.file_name().unwrap_or_default()))
         .collect();
-    candidates.sort_by_key(|p| {
-        let name = p.to_string_lossy().to_ascii_lowercase();
-        (!name.contains("f16"), name)
-    });
-    Ok(candidates.into_iter().find_map(|c| Mmproj::open(&c).ok()))
+    Ok(mmproj_candidates(names.iter().map(String::as_str))
+        .into_iter()
+        .find_map(|n| Mmproj::open(&path.with_file_name(n)).ok()))
 }
 
 impl Mmproj {
     /// Read a vision projector GGUF (architecture `clip`).
     pub fn open(path: &Path) -> Result<Self, Error> {
-        let g = Gguf::open(path)?;
+        Self::from_gguf(&Gguf::open(path)?, path)
+    }
+
+    /// From a projector's GGUF header already in memory; `path` is what gets printed.
+    pub fn from_gguf(g: &Gguf, path: &Path) -> Result<Self, Error> {
         if g.get_str("general.architecture") != Some("clip") {
             return Err(Error::NotAModel {
                 path: path.to_path_buf(),
                 reason: "not a vision projector (architecture is not `clip`)".into(),
             });
         }
-        let (n_img_tokens, img_tokens_basis) = image_tokens(&g);
+        let (n_img_tokens, img_tokens_basis) = image_tokens(g);
         Ok(Mmproj {
             weight_bytes: g.tensor_bytes(),
             path: path.to_path_buf(),

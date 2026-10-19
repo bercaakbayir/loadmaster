@@ -223,9 +223,15 @@ pub(crate) struct HwArgs {
 
 #[derive(Args)]
 struct PlanArgs {
-    /// A .gguf file (any part of a split model), a Hugging Face model directory, or a name
-    /// from `loadmaster scan` (`llama3.2:1b`, `org/repo`, `hf://org/repo/file.gguf`).
+    /// A .gguf file (any part of a split model), a Hugging Face model directory, a name
+    /// from `loadmaster scan` (`llama3.2:1b`, `org/repo`), or a Hub model:
+    /// `hf://org/repo/file.gguf` plans one file, `hf://org/repo` compares a repo's quants.
+    /// Hub models not in the local cache are planned from their headers (a few MB), not
+    /// downloaded.
     model: String,
+    /// Use only Hub headers already cached; never touch the network.
+    #[arg(long)]
+    offline: bool,
     /// `auto`, a GPU index, or part of a GPU name from `loadmaster gpu`.
     #[arg(long, default_value = "auto")]
     gpu: String,

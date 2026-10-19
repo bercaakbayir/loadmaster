@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use loadmaster_model::gguf::{Error as GgufError, Gguf};
+use loadmaster_model::{Mmproj, ModelInfo, Source, mmproj_candidates, split_part_names};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_ENDPOINT: &str = "https://huggingface.co";
@@ -22,7 +23,9 @@ const TREE_TTL: Duration = Duration::from_secs(24 * 3600);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("{0}: gated or private repo; accept its licence on huggingface.co and set HF_TOKEN")]
+    #[error(
+        "{0}: not found, or gated or private (the Hub answers both the same way); check the name, and for a gated repo accept its licence on huggingface.co and set HF_TOKEN"
+    )]
     Gated(String),
     #[error("{0}: not found on the Hugging Face Hub")]
     NotFound(String),
@@ -36,6 +39,14 @@ pub enum Error {
     Offline(String),
     #[error("cache {}: {reason}", path.display())]
     Cache { path: PathBuf, reason: String },
+    #[error("hf://{repo}: no file `{file}`{hint}")]
+    NoSuchFile {
+        repo: String,
+        file: String,
+        hint: String,
+    },
+    #[error(transparent)]
+    Model(#[from] loadmaster_model::Error),
 }
 
 /// A file in a repo, as the tree API lists it.
@@ -305,6 +316,100 @@ impl Hub {
             })?;
         Self::write_cache(&cached, &bytes)?;
         Ok(bytes)
+    }
+}
+
+impl Hub {
+    /// A GGUF model in a repo from its header (every part, if split) and the projector
+    /// next to it, if any. Nothing but headers is downloaded.
+    pub fn open_gguf(
+        &self,
+        repo: &str,
+        rev: &str,
+        file: &str,
+        files: &[RemoteFile],
+    ) -> Result<ModelInfo, Error> {
+        let size_of = |path: &str| files.iter().find(|f| f.path == path).map(|f| f.size);
+        let Some(size) = size_of(file) else {
+            let ggufs: Vec<&str> = files
+                .iter()
+                .map(|f| f.path.as_str())
+                .filter(|p| p.ends_with(".gguf"))
+                .collect();
+            return Err(Error::NoSuchFile {
+                repo: repo.into(),
+                file: file.into(),
+                hint: if ggufs.is_empty() {
+                    "; the repo has no .gguf files".into()
+                } else {
+                    format!(
+                        "; plan hf://{repo} to compare its {} GGUF files",
+                        ggufs.len()
+                    )
+                },
+            });
+        };
+        let header = |path: &str, size: u64| -> Result<Gguf, Error> {
+            let bytes = self.gguf_header(repo, rev, path)?;
+            let mut g = Gguf::parse_bytes(&bytes).map_err(loadmaster_model::Error::from)?;
+            g.path = PathBuf::from(format!("hf://{repo}/{path}"));
+            g.file_size = size;
+            Ok(g)
+        };
+        let first = header(file, size)?;
+        let (dir, name) = match file.rsplit_once('/') {
+            Some((d, n)) => (format!("{d}/"), n),
+            None => (String::new(), file),
+        };
+        let count = first.get_u32("split.count").unwrap_or(1);
+        let names = if count > 1 {
+            split_part_names(name, count).ok_or_else(|| loadmaster_model::Error::Split {
+                path: first.path.clone(),
+                reason: format!(
+                    "header says {count} parts but the name does not match `<name>-00001-of-{count:05}.gguf`"
+                ),
+            })?
+        } else {
+            vec![name.to_owned()]
+        };
+        let mut parts = Vec::with_capacity(names.len());
+        let mut first = Some(first);
+        for n in &names {
+            let path = format!("{dir}{n}");
+            match first.take_if(|g| g.path.ends_with(&path)) {
+                Some(g) => parts.push(g),
+                None => {
+                    let size = size_of(&path).ok_or_else(|| loadmaster_model::Error::Split {
+                        path: PathBuf::from(format!("hf://{repo}/{path}")),
+                        reason: format!("part of {count} is not in the repo"),
+                    })?;
+                    parts.push(header(&path, size)?);
+                }
+            }
+        }
+        let display = format!("hf://{repo}/{dir}{}", names[0]);
+        let mut info = ModelInfo::from_gguf_parts(&display, &parts)?;
+        info.source = Source::HfRemote {
+            repo: repo.into(),
+            revision: rev.into(),
+            file: Some(format!("{dir}{}", names[0])),
+        };
+        // A projector in the same directory, by the same rule as on disk.
+        let siblings: Vec<&str> = files
+            .iter()
+            .filter_map(|f| f.path.strip_prefix(dir.as_str()))
+            .filter(|n| !n.contains('/') && !names.iter().any(|m| m == n))
+            .collect();
+        for c in mmproj_candidates(siblings) {
+            let path = format!("{dir}{c}");
+            let g = header(&path, size_of(&path).unwrap_or(0))?;
+            let url = PathBuf::from(self.file_url(repo, rev, &path));
+            if let Ok(m) = Mmproj::from_gguf(&g, &url) {
+                info.mmproj = Some(m);
+                break;
+            }
+        }
+        Ok(info)
     }
 }
 

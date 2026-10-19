@@ -11,6 +11,10 @@ All notable changes to this project are documented here. The format follows
   catalog (`rtx 4090`, `a6000`), a Mac with its RAM (`m4 pro 48gb`), or a raw size (`24GB`,
   `48GB-unified`), with optional host RAM (`rtx 3090+128GB`). `gpu --pretend list` prints the
   catalog; `up` refuses it.
+- `plan hf://org/repo/file.gguf` plans a Hub model from its header alone (a few MB, never
+  the weights): split GGUFs and a sibling mmproj included, headers cached under
+  `~/.loadmaster/hf`, `--offline` for cache only, `HF_TOKEN` for gated repos, `HF_ENDPOINT`
+  for mirrors. The command uses `--hf-repo/--hf-file` so llama-server fetches the same file.
 
 ### Added (probe, verify, eval)
 - `loadmaster probe <url> --model <name>`: ten declarative YAML fixtures (template, tool

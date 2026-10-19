@@ -63,6 +63,13 @@ pub enum Source {
     Ollama { name: String, digest: String },
     /// LM Studio models directory: `<publisher>/<repo>/<file>`.
     LmStudio { repo: String },
+    /// Headers fetched from the Hugging Face Hub; nothing is on disk. `file` is the GGUF
+    /// (first part if split) in the repo, `None` for a safetensors repo.
+    HfRemote {
+        repo: String,
+        revision: String,
+        file: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -345,6 +345,10 @@ pub fn source_string(source: &Source, path: &Path) -> String {
         Source::Ollama { name, .. } => format!("ollama://{name}"),
         Source::LmStudio { .. } => path.display().to_string(),
         Source::Loose => path.display().to_string(),
+        Source::HfRemote { repo, file, .. } => match file {
+            Some(f) => format!("hf://{repo}/{f}"),
+            None => format!("hf://{repo}"),
+        },
     }
 }
 

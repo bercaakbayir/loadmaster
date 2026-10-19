@@ -5,9 +5,26 @@ use crate::{KvType, Plan};
 pub const BIN: &str = "llama-server";
 
 pub fn argv(plan: &Plan) -> Vec<String> {
-    let mut a: Vec<String> = vec![BIN.into(), "-m".into(), plan.model.path.clone()];
+    let mut a: Vec<String> = vec![BIN.into()];
+    // Planned from Hub headers: llama-server fetches the exact file (and the projector).
+    match (&plan.model.hf_repo, &plan.model.hf_file) {
+        (Some(repo), Some(file)) => {
+            a.extend([
+                "--hf-repo".into(),
+                repo.clone(),
+                "--hf-file".into(),
+                file.clone(),
+            ]);
+        }
+        _ => a.extend(["-m".into(), plan.model.path.clone()]),
+    }
     if let Some(mmproj) = &plan.model.mmproj {
-        a.extend(["--mmproj".into(), mmproj.clone()]);
+        let flag = if mmproj.starts_with("https://") || mmproj.starts_with("http://") {
+            "--mmproj-url"
+        } else {
+            "--mmproj"
+        };
+        a.extend([flag.into(), mmproj.clone()]);
     }
     a.extend(["-c".into(), plan.ctx.to_string()]);
     a.extend(["-ngl".into(), plan.placement.n_gpu_layers.to_string()]);

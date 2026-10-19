@@ -57,7 +57,57 @@ pub fn open_model(arg: &str) -> anyhow::Result<loadmaster_model::ModelInfo> {
     }
 }
 
-/// `$LOADMASTER_HOME`, or `~/.loadmaster`: logs, probe captures, eval database.
+/// What `plan` was pointed at.
+pub enum Target {
+    Model(Box<loadmaster_model::ModelInfo>),
+    /// A Hub repo with no file named: the caller compares its GGUF files.
+    Repo {
+        spec: loadmaster_store::remote::Spec,
+        files: Vec<loadmaster_store::remote::RemoteFile>,
+    },
+}
+
+/// A model on disk or in a local store, else, for `hf://` specs only, from the Hugging Face
+/// Hub (headers only; `offline` uses the header cache alone).
+pub fn open_target(arg: &str, offline: bool) -> anyhow::Result<Target> {
+    use loadmaster_store::remote::Spec;
+    let local = open_model(arg);
+    let spec = match (local, Spec::parse(arg)) {
+        (Ok(m), _) => return Ok(Target::Model(Box::new(m))),
+        (Err(e), None) => return Err(e),
+        (Err(_), Some(spec)) => spec,
+    };
+    let hub = hub(offline);
+    let files = hub.list(&spec.repo, &spec.rev)?;
+    match &spec.file {
+        Some(file) => Ok(Target::Model(Box::new(
+            hub.open_gguf(&spec.repo, &spec.rev, file, &files)?,
+        ))),
+        None => Ok(Target::Repo { spec, files }),
+    }
+}
+
+/// The Hub client: `$HF_ENDPOINT`, a token from `$HF_TOKEN` or the `huggingface-cli login`
+/// file, and the header cache under the state directory.
+pub fn hub(offline: bool) -> loadmaster_store::remote::Hub {
+    use loadmaster_store::remote::{DEFAULT_ENDPOINT, Hub};
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let endpoint = env("HF_ENDPOINT").unwrap_or_else(|| DEFAULT_ENDPOINT.into());
+    let token = env("HF_TOKEN").or_else(|| {
+        let hf_home = env("HF_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(env("HOME").unwrap_or_default()).join(".cache/huggingface")
+            });
+        std::fs::read_to_string(hf_home.join("token"))
+            .ok()
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+    });
+    Hub::new(&endpoint, token, state_dir().join("hf"), offline)
+}
+
+/// `$LOADMASTER_HOME`, or `~/.loadmaster`: logs, probe captures, eval database, Hub headers.
 pub fn state_dir() -> std::path::PathBuf {
     std::env::var_os("LOADMASTER_HOME")
         .map(std::path::PathBuf::from)

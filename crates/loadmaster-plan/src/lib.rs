@@ -90,8 +90,13 @@ pub struct ModelSummary {
     pub mmproj: Option<String>,
     pub moe: bool,
     pub chat_template_blake3: Option<String>,
-    /// `org/name` when the model came from the Hugging Face cache (vLLM serves by repo id).
+    /// `org/name` when the model came from the Hugging Face cache or Hub (vLLM serves by
+    /// repo id).
     pub hf_repo: Option<String>,
+    /// The GGUF in `hf_repo` when only its header was fetched: llama-server downloads it
+    /// with `--hf-repo`/`--hf-file`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hf_file: Option<String>,
 }
 
 /// A config file a runtime reads instead of (or as well as) flags.
@@ -326,7 +331,11 @@ fn summary(model: &ModelInfo) -> ModelSummary {
         moe: model.is_moe(),
         chat_template_blake3: model.chat_template.as_ref().map(|t| t.blake3.clone()),
         hf_repo: match &model.source {
-            Source::HfCache { repo, .. } => Some(repo.clone()),
+            Source::HfCache { repo, .. } | Source::HfRemote { repo, .. } => Some(repo.clone()),
+            _ => None,
+        },
+        hf_file: match &model.source {
+            Source::HfRemote { file, .. } => file.clone(),
             _ => None,
         },
     }

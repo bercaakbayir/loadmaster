@@ -15,7 +15,22 @@ enum JsonOut<'a> {
 }
 
 pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
-    let model = super::open_model(&args.model)?;
+    let model = match super::open_target(&args.model, args.offline)? {
+        super::Target::Model(m) => *m,
+        super::Target::Repo { spec, files } => {
+            let ggufs: Vec<&str> = files
+                .iter()
+                .map(|f| f.path.as_str())
+                .filter(|p| p.ends_with(".gguf"))
+                .collect();
+            anyhow::bail!(
+                "hf://{}: name a file, e.g. hf://{}/{}",
+                spec.repo,
+                spec.repo,
+                ggufs.first().copied().unwrap_or("<file>.gguf")
+            );
+        }
+    };
     let snap = super::snapshot(&args.hw)?;
     let gpu =
         match args.gpu.as_str() {

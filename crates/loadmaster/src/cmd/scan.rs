@@ -87,6 +87,7 @@ fn source_kind(s: &Source) -> &'static str {
         Source::Ollama { .. } => "ollama",
         Source::LmStudio { .. } => "lmstudio",
         Source::Loose => "path",
+        Source::HfRemote { .. } => "hf-remote",
     }
 }
 

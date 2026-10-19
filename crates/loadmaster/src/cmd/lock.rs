@@ -224,7 +224,16 @@ pub fn init(args: InitArgs) -> anyhow::Result<ExitCode> {
 pub fn add(args: AddArgs) -> anyhow::Result<ExitCode> {
     let mut lock = Lockfile::load(&args.lock.lock)
         .with_context(|| "run `loadmaster init` first to create the lockfile".to_string())?;
-    let m = super::open_model(&args.model)?;
+    let m = super::open_model(&args.model).map_err(|e| {
+        match loadmaster_store::remote::Spec::parse(&args.model) {
+            // Serving needs the weights: the lockfile only takes models on disk.
+            Some(spec) => e.context(format!(
+                "models.lock needs the model on disk: `huggingface-cli download {}` first (`loadmaster plan {}` works without downloading)",
+                spec.repo, args.model
+            )),
+            None => e,
+        }
+    })?;
     let snap = super::snapshot(&args.hw)?;
     let gpu = super::pick_gpu(&snap, "auto")?;
     let name = match args.name {

@@ -22,6 +22,31 @@ alternatives:
 `--explain` prints every term of the budget (weights, KV cache, compute buffer, vision
 projector, headroom) with its inputs, and every configuration that was tried.
 
+### Try it without the GPU or the download
+
+`hf://` models are planned from their headers (a few MB), never the weights, and `--pretend`
+stands in for hardware you don't have:
+
+```console
+$ loadmaster plan hf://unsloth/Qwen3-30B-A3B-GGUF --pretend "rtx 4090" --ctx 32768
+Qwen3-30B-A3B · 26 quants · NVIDIA GeForce RTX 4090 (pretend) (23.50 GiB usable)
+QUANT             SIZE  FIT                      CTX  KV           GPU
+Q3_K_M       13.70 GiB  gpu                    32768  f16    17.50 GiB  *
+Q4_K_M       17.28 GiB  gpu                    32768  f16    21.05 GiB
+Q5_K_M       20.23 GiB  gpu                    32768  q8_0   22.56 GiB  *
+Q6_K         23.37 GiB  offload                32768  q8_0   23.20 GiB  *
+Q8_0         30.25 GiB  offload                32768  q8_0   23.42 GiB  *
+BF16         56.90 GiB  no, 30.52 GiB short        -  -       5.05 GiB  *
+...
+* estimated: the Q4_K_M header scaled to that file's size
+```
+
+Name a file (`hf://org/repo/file.gguf`) for the exact plan; the command then uses
+`--hf-repo/--hf-file`, so llama-server downloads that same file. Safetensors repos work with
+`--runtime vllm`. `--pretend` takes a card (`rtx 3090`, `a6000`), a Mac with its RAM
+(`m4 pro 48gb`) or a size (`24GB`, `48GB-unified`); `loadmaster gpu --pretend list` shows the
+catalog. Gated repos need `HF_TOKEN`; headers are cached under `~/.loadmaster/hf`.
+
 ## Why "loadmaster"?
 
 On a cargo aircraft the loadmaster decides whether the flight can happen at all: they weigh
@@ -44,8 +69,9 @@ same way tomorrow.
 | Command | Does |
 |---|---|
 | `loadmaster scan [--path DIR] [--json]` | Index the HF cache, Ollama, LM Studio and loose dirs (read-only), with fit at 8k/32k/128k |
-| `loadmaster gpu [--json]` | GPUs and usable memory (NVML, Apple unified memory) |
+| `loadmaster gpu [--json] [--pretend HW\|list]` | GPUs and usable memory (NVML, Apple unified memory), or a pretend one |
 | `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain] [--json]` | Memory budget, the exact launch command, alternatives |
+| `loadmaster plan hf://org/repo[/file.gguf] [--offline]` | The same from Hub headers only; a bare GGUF repo compares every quant |
 | `loadmaster init <names…\|--all>` / `add <model>` | Write `models.lock` with frozen flags and footprints |
 | `loadmaster plan <name> --update` | Re-plan one lockfile entry and show the diff |
 | `loadmaster up [--verify]` / `down` / `swap <name>` / `status` | Serve every model on one OpenAI-compatible port, evicting by footprint |
@@ -53,9 +79,10 @@ same way tomorrow.
 | `loadmaster probe <url> --model <name> [--json]` | Tool-call and structured-output conformance; exit 0 pass, 1 partial, 2 fail |
 | `loadmaster probe eval <prompts.jsonl> --model a --model b` / `probe compare <run> <run>` | Your prompts, deterministic sampling, SQLite results, significance-tested diffs |
 
-`<model>` is a `.gguf` file, a Hugging Face model directory, or a name from `scan`
-(`llama3.2:1b`, `org/repo`, `hf://org/repo/file.gguf`). `lm` is installed as a short alias.
-Errors exit 3.
+`<model>` is a `.gguf` file, a Hugging Face model directory, a name from `scan`
+(`llama3.2:1b`, `org/repo`), or `hf://org/repo[/file]`: from the local cache when it is there,
+else from the Hub's headers. `--pretend HW` works on `plan`, `scan`, `gpu`, `init` and `add`.
+`lm` is installed as a short alias. Errors exit 3.
 
 ## How it works
 

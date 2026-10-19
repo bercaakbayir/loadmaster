@@ -49,6 +49,10 @@ checked_at = "2026-12-01T10:00:00Z"
 |---|---|
 | `hf://org/repo/file.gguf` | a GGUF in the Hugging Face cache |
 | `hf://org/repo` | a safetensors model directory in the HF cache (vLLM, exl3) |
+
+A lockfile entry needs the weights on disk: `loadmaster plan hf://...` plans from Hub headers
+without downloading, but `add` and `init` only take models already in the cache
+(`huggingface-cli download org/repo` first).
 | `ollama://name:tag` | a model in the Ollama store |
 | `/path/to/model.gguf` or a directory | a file or directory on disk |
 

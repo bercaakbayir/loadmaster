@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   `--from-log NAME` reports from a `loadmaster up` log instead. On unified memory it runs
   only plans that fit within the RAM margin and stops the run if free RAM falls below it;
   `--try-anyway` checks a "does not fit" prediction on a dedicated GPU.
+- Validation intake: an issue form for reports, `cargo xtask intake` turns one into a case
+  (and optionally a speed point), CONTRIBUTING.md "Report a run". `scripts/collect-case.sh`
+  is replaced by `loadmaster report` (ADR 0010).
 - `__fake-runtime` replays llama-server logs (`--log-fixture`), fails loads (`--oom-after`)
   and serves `/completion` with timings (`--speed`), so all of the above is tested without
   a model.

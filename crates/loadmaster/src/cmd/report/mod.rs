@@ -544,6 +544,9 @@ pub fn run(a: Args) -> anyhow::Result<ExitCode> {
     let replayed = a.hw.hw_file.is_some();
     let snap = super::snapshot(&a.hw)?;
     let gpu = super::pick_gpu(&snap, "auto")?;
+    if gpu.name.contains("(pretend)") {
+        bail!("this hardware snapshot is a --pretend one; a report records real hardware");
+    }
     let req = PlanRequest {
         ctx: a.ctx,
         ..PlanRequest::default()

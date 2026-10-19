@@ -1,0 +1,31 @@
+name: Validation report
+description: Share a `loadmaster report`, what a model really used on your hardware
+title: "[report] "
+labels: ["validation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! A report is the most useful thing you can send: every one checks a
+        prediction on hardware we do not have. `loadmaster report` filled in the box below;
+        check it reads as you expect. It contains no paths, hostnames or user names.
+  - type: textarea
+    id: report
+    attributes:
+      label: Report
+      description: The `loadmaster-report-*.toml` file. Paste it here if the box is empty.
+      render: toml
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything unusual (other apps using the GPU, driver version, flags you changed).
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: License
+      options:
+        - label: I agree this report can be added to loadmaster's validation data (MIT OR Apache-2.0).
+          required: true

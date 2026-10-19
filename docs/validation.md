@@ -46,22 +46,31 @@ loadmaster agrees with ground truth on 13 of 13 cases.
 
 ## Collecting a case
 
-On the machine under test, with llama.cpp and a model file:
+On the machine under test, with llama.cpp and a GGUF model:
 
 ```sh
-scripts/collect-case.sh Qwen3-8B-Q4_K_M.gguf 32768          # f16 KV
-scripts/collect-case.sh Qwen3-8B-Q4_K_M.gguf 65536 q8_0
+loadmaster report Qwen3-8B-Q4_K_M.gguf --ctx 32768
 ```
 
-It starts `llama-server` with full offload, records `fits` (it reached "listening") or
-`oom`, the buffer sizes llama.cpp logged, and what loadmaster predicted, and prints a
-`[[case]]` block to paste into `validation/cases.toml`. Add a `header_url` (the HF
-`resolve/main/...gguf` URL) so others can replay it.
+It plans the model, shows the exact `llama-server` command and asks before starting it,
+waits for the load, times one 128-token request, and stops the server. The report records
+every buffer llama.cpp allocated per device, `fits` or `oom`, generation and prompt speed,
+and what loadmaster predicted, with no paths, hostnames or user names, and prints a link
+that opens a prefilled GitHub issue. Nothing is uploaded unless you submit that issue.
+
+- **Already serving with `loadmaster up`?** Add `"-lv", "4"` to the model's `flags`, load
+  it once, then `loadmaster report --from-log <name>`.
+- **On a dedicated GPU,** check a "does not fit" prediction with `--try-anyway` (every layer
+  on the GPU; a failed load is just a failed process there).
+- **On Apple Silicon** report refuses plans that do not fit or leave under 15% of free RAM
+  unused (`--unsafe-unified` overrides), and stops the run if free RAM falls below that: a
+  real out-of-memory there can reset the machine (it did once, see `observed.toml`).
 
 Good cases sit near the boundary: for each (model, GPU), the largest context that loads and
-the next step up that does not. On NVIDIA an OOM is a failed process; collect both sides.
-**On Apple Silicon the script refuses configurations loadmaster predicts will not fit**: a
-real OOM there can reset the machine (it did once, see the incident in `observed.toml`).
+the next step up that does not.
 
-For the llmfit and `llama-server --fit` columns, run those tools on the same case and add
-`llmfit = "fits" | "no"` and `llama_fit = "fits" | "no"`.
+Maintainers turn a submitted report into a case with
+`cargo xtask intake <report.toml | issue-body.md>` (`--check` to validate only, `--add-speed`
+to add its speed to `validation/speed.toml`), then `cargo xtask fetch-headers && cargo xtask
+validate`. For the llmfit and `llama-server --fit` columns, run those tools on the same case
+and add `llmfit = "fits" | "no"` and `llama_fit = "fits" | "no"`.

@@ -121,8 +121,9 @@ fake OpenAI server, fake hardware). What is and is not validated against real ru
 | Probe | every failure class reproduced on the fake runtime | [`RESULTS.md`](RESULTS.md) for 20 models (needs a 24 GB GPU) |
 | Docker, systemd, AUR, Windows | files written | built and run |
 
-Help close these: [docs/validation.md](docs/validation.md) explains how to record a case
-safely on your machine.
+Help close these with one command: `loadmaster report model.gguf --ctx 32768` runs the model
+once, writes what it really used next to the prediction, and gives you a prefilled issue to
+submit ([CONTRIBUTING.md](CONTRIBUTING.md)). Nothing is uploaded unless you submit it.
 
 ## Install
 

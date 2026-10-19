@@ -8,6 +8,7 @@ use anyhow::{Context, bail};
 mod fixtures;
 mod headers;
 mod hf_fixtures;
+mod intake;
 mod results;
 mod validate;
 
@@ -83,12 +84,24 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Some("publish-order") => publish_order(),
+        Some("intake") => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let file = args.iter().find(|a| !a.starts_with("--")).context(
+                "usage: cargo xtask intake <report.toml | issue.md> [--check] [--add-speed]",
+            )?;
+            intake::run(
+                &workspace_root(),
+                std::path::Path::new(file),
+                args.iter().any(|a| a == "--check"),
+                args.iter().any(|a| a == "--add-speed"),
+            )
+        }
         Some("validate") => {
             let markdown = std::env::args().nth(2).as_deref() == Some("--markdown");
             validate::run(&workspace_root(), markdown)
         }
         _ => bail!(
-            "usage: cargo xtask <check-deps | gen-fixtures [--check] | fetch-headers | validate [--markdown] | results ... | publish-order>"
+            "usage: cargo xtask <check-deps | gen-fixtures [--check] | fetch-headers | validate [--markdown] | intake <file> [--check] [--add-speed] | results ... | publish-order>"
         ),
     }
 }

@@ -68,8 +68,9 @@ pub enum Target {
 }
 
 /// A model on disk or in a local store, else, for `hf://` specs only, from the Hugging Face
-/// Hub (headers only; `offline` uses the header cache alone).
-pub fn open_target(arg: &str, offline: bool) -> anyhow::Result<Target> {
+/// Hub (headers only; `offline` uses the header cache alone). A repo with no file named is
+/// a GGUF repo to compare when planning for llama.cpp (`gguf`), else a safetensors model.
+pub fn open_target(arg: &str, offline: bool, gguf: bool) -> anyhow::Result<Target> {
     use loadmaster_store::remote::Spec;
     let local = open_model(arg);
     let spec = match (local, Spec::parse(arg)) {
@@ -83,7 +84,21 @@ pub fn open_target(arg: &str, offline: bool) -> anyhow::Result<Target> {
         Some(file) => Ok(Target::Model(Box::new(
             hub.open_gguf(&spec.repo, &spec.rev, file, &files)?,
         ))),
-        None => Ok(Target::Repo { spec, files }),
+        None => {
+            let has_gguf = files.iter().any(|f| f.path.ends_with(".gguf"));
+            let has_st = files.iter().any(|f| f.path == "config.json")
+                && files.iter().any(|f| f.path.ends_with(".safetensors"));
+            match (has_gguf, has_st) {
+                (true, _) if gguf || !has_st => Ok(Target::Repo { spec, files }),
+                (_, true) => Ok(Target::Model(Box::new(
+                    hub.open_safetensors(&spec.repo, &spec.rev, &files)?,
+                ))),
+                _ => anyhow::bail!(
+                    "hf://{}: no .gguf files and no config.json with safetensors",
+                    spec.repo
+                ),
+            }
+        }
     }
 }
 

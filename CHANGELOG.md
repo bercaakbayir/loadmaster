@@ -18,6 +18,9 @@ All notable changes to this project are documented here. The format follows
 - `plan hf://org/repo` compares every GGUF quant in a repo: one header planned exactly, the
   rest scaled to their file sizes (within a few hundred bytes of the exact plan on Llama
   3.2 1B), with the largest quant that fits entirely on the GPU suggested. `--json` too.
+- `plan hf://org/repo --runtime vllm` plans a safetensors repo from `config.json`, the
+  shard index and each shard's header (AWQ/GPTQ/FP8 included); the command is
+  `vllm serve org/repo`.
 
 ### Added (probe, verify, eval)
 - `loadmaster probe <url> --model <name>`: ten declarative YAML fixtures (template, tool

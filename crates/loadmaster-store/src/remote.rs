@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use loadmaster_model::gguf::{Error as GgufError, Gguf};
+use loadmaster_model::safetensors::{self, HfParts, StHeader};
 use loadmaster_model::{Mmproj, ModelInfo, Source, mmproj_candidates, split_part_names};
 use serde::{Deserialize, Serialize};
 
@@ -409,6 +410,76 @@ impl Hub {
                 break;
             }
         }
+        Ok(info)
+    }
+}
+
+impl Hub {
+    /// A safetensors model repo from `config.json`, the shard index, the chat template and
+    /// each shard's header. Nothing but headers and small JSON files is downloaded.
+    pub fn open_safetensors(
+        &self,
+        repo: &str,
+        rev: &str,
+        files: &[RemoteFile],
+    ) -> Result<ModelInfo, Error> {
+        let has = |p: &str| files.iter().any(|f| f.path == p);
+        let size_of = |p: &str| files.iter().find(|f| f.path == p).map_or(0, |f| f.size);
+        let json = |p: &str| -> Result<serde_json::Value, Error> {
+            let bytes = self.small_file(repo, rev, p)?;
+            serde_json::from_slice(&bytes).map_err(|e| Error::Format {
+                url: format!("hf://{repo}/{p}"),
+                reason: format!("not valid JSON: {e}"),
+            })
+        };
+        let config = json("config.json")?;
+        let shards: Vec<String> = if has("model.safetensors.index.json") {
+            safetensors::index_shards(&json("model.safetensors.index.json")?)
+        } else {
+            files
+                .iter()
+                .map(|f| f.path.clone())
+                .filter(|p| !p.contains('/') && p.ends_with(".safetensors"))
+                .collect()
+        };
+        if shards.is_empty() {
+            return Err(Error::NoSuchFile {
+                repo: repo.into(),
+                file: "*.safetensors".into(),
+                hint: String::new(),
+            });
+        }
+        let headers = shards
+            .iter()
+            .map(|s| {
+                let bytes = self.safetensors_header(repo, rev, s)?;
+                let path = PathBuf::from(format!("hf://{repo}/{s}"));
+                Ok(StHeader::from_bytes(&path, &bytes, size_of(s))?)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let jinja = if has("chat_template.jinja") {
+            String::from_utf8(self.small_file(repo, rev, "chat_template.jinja")?).ok()
+        } else {
+            None
+        };
+        let tokenizer = if jinja.is_none() && has("tokenizer_config.json") {
+            json("tokenizer_config.json").ok()
+        } else {
+            None
+        };
+        let mut info = ModelInfo::from_hf_parts(HfParts {
+            path: PathBuf::from(format!("hf://{repo}")),
+            name: repo.rsplit('/').next().map(str::to_owned),
+            config,
+            config_path: PathBuf::from(format!("hf://{repo}/config.json")),
+            headers,
+            chat_template: safetensors::chat_template_from(jinja, tokenizer.as_ref()),
+        })?;
+        info.source = Source::HfRemote {
+            repo: repo.into(),
+            revision: rev.into(),
+            file: None,
+        };
         Ok(info)
     }
 }

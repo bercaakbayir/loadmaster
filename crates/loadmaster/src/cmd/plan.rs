@@ -15,7 +15,8 @@ enum JsonOut<'a> {
 }
 
 pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
-    let model = match super::open_target(&args.model, args.offline)? {
+    let gguf = args.runtime == crate::Runtime::LlamaCpp;
+    let model = match super::open_target(&args.model, args.offline, gguf)? {
         super::Target::Model(m) => *m,
         super::Target::Repo { spec, files } => return repo_table(&args, &spec, &files),
     };
@@ -166,6 +167,13 @@ fn repo_table(
     spec: &loadmaster_store::remote::Spec,
     files: &[loadmaster_store::remote::RemoteFile],
 ) -> anyhow::Result<ExitCode> {
+    if args.runtime != crate::Runtime::LlamaCpp {
+        anyhow::bail!(
+            "hf://{}: a GGUF repo; plan it with --runtime llama.cpp, or pass a safetensors repo for {}",
+            spec.repo,
+            loadmaster_plan::Runtime::from(args.runtime).name()
+        );
+    }
     let quants = repo_quants(files);
     if quants.is_empty() {
         anyhow::bail!(
@@ -194,7 +202,7 @@ fn repo_table(
     let base_weights = base.size.saturating_sub(header).max(1) as f64;
     let rows: Vec<RepoRow> = quants
         .iter()
-        .map(|q| {
+        .map(|q| -> anyhow::Result<RepoRow> {
             let exact = q.file == base.file;
             let m = if exact {
                 model.clone()
@@ -213,7 +221,7 @@ fn repo_table(
                 short_by,
                 exact,
             };
-            match loadmaster_plan::plan(&m, &snap, &gpu, &req) {
+            Ok(match loadmaster_plan::plan(&m, &snap, &gpu, &req) {
                 Ok(p) => row(
                     if p.placement.is_full(m.n_layer) {
                         "gpu"
@@ -228,10 +236,10 @@ fn repo_table(
                 Err(Error::CannotFit(n)) => {
                     row("no", n.ctx, None, n.closest.gpu_bytes, Some(n.short_by))
                 }
-                Err(_) => row("no", 0, None, 0, None),
-            }
+                Err(e) => return Err(e.into()),
+            })
         })
-        .collect();
+        .collect::<anyhow::Result<_>>()?;
     let any_fit = rows.iter().any(|r| r.fit != "no");
     if args.json {
         println!(

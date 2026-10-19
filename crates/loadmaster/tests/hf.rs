@@ -35,6 +35,26 @@ fn gguf(rel: &str) -> File {
     }
 }
 
+/// A file from `fixtures/hf/<dir>`; safetensors shards report their full size.
+fn hf_file(dir: &str, name: &str) -> File {
+    let bytes = std::fs::read(workspace().join("fixtures/hf").join(dir).join(name)).unwrap();
+    let size = if name.ends_with(".safetensors") {
+        let n = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+        let header: serde_json::Value = serde_json::from_slice(&bytes[8..8 + n as usize]).unwrap();
+        let end = header
+            .as_object()
+            .unwrap()
+            .values()
+            .filter_map(|t| t["data_offsets"][1].as_u64())
+            .max()
+            .unwrap();
+        8 + n + end
+    } else {
+        bytes.len() as u64
+    };
+    File { bytes, size }
+}
+
 /// Repos keyed by `org/name`, then by path in the repo. `private` repos need the token.
 struct Hub {
     repos: HashMap<String, Vec<(String, File)>>,
@@ -71,6 +91,18 @@ fn hub() -> Hub {
                 gguf("gemma-3-12b/mmproj-gemma-3-12b-it-F16.gguf"),
             ),
         ],
+    );
+    let awq = "Qwen3-8B-AWQ";
+    repos.insert(
+        "fx/Qwen3-8B-AWQ".into(),
+        std::fs::read_dir(workspace().join("fixtures/hf").join(awq))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .map(|n| {
+                let f = hf_file(awq, &n);
+                (n, f)
+            })
+            .collect(),
     );
     repos.insert(
         "fx/private".into(),
@@ -317,4 +349,43 @@ fn a_bare_repo_compares_its_quants() {
         out.contains("loadmaster plan hf://fx/qwen3-8b-GGUF/"),
         "{out}"
     );
+}
+
+#[test]
+fn plans_a_safetensors_repo_for_vllm() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    let args = [
+        "plan",
+        "hf://fx/Qwen3-8B-AWQ",
+        "--runtime",
+        "vllm",
+        "--pretend",
+        "rtx 3060",
+        "--ctx",
+        "8192",
+    ];
+    let o = run(&url, home.path(), None, &args);
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    assert!(out.contains("AWQ-4bit"), "{out}");
+    assert!(out.contains("vllm serve fx/Qwen3-8B-AWQ "), "{out}");
+    assert!(!out.contains("incomplete download"), "{out}");
+
+    // A GGUF repo cannot be planned for vLLM.
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[
+            "plan",
+            "hf://fx/qwen3-8b-GGUF",
+            "--runtime",
+            "vllm",
+            "--pretend",
+            "4090",
+        ],
+    );
+    assert_eq!(o.status.code(), Some(3));
+    assert!(text(&o).1.contains("a GGUF repo"), "{}", text(&o).1);
 }

@@ -476,3 +476,47 @@ fn pretend_plans_on_hardware_you_do_not_have() {
     assert_eq!(o.status.code(), Some(3));
     assert!(String::from_utf8_lossy(&o.stderr).contains("--pretend is for planning"));
 }
+
+#[test]
+fn gpu_selection_splits_by_default_and_pins_one() {
+    let split = run(&[
+        "plan",
+        QWEN3_30B,
+        "--ctx",
+        "32768",
+        "--pretend",
+        "2x rtx 3060",
+    ]);
+    let out = stdout(&split);
+    assert_eq!(split.status.code(), Some(0), "{out}");
+    assert!(
+        out.contains("across 2 GPUs") && out.contains("--tensor-split"),
+        "{out}"
+    );
+    let one = run(&[
+        "plan",
+        QWEN3_30B,
+        "--ctx",
+        "32768",
+        "--pretend",
+        "2x rtx 3060",
+        "--gpu",
+        "1",
+    ]);
+    let out = stdout(&one);
+    assert!(
+        out.contains("--device CUDA1") && !out.contains("--tensor-split"),
+        "{out}"
+    );
+    let both = run(&[
+        "plan",
+        QWEN3_30B,
+        "--ctx",
+        "32768",
+        "--pretend",
+        "2x rtx 3060",
+        "--gpu",
+        "0,1",
+    ]);
+    assert!(stdout(&both).contains("--device CUDA0,CUDA1"));
+}

@@ -219,6 +219,108 @@ pub fn estimate(model: &ModelInfo, p: Placement, cfg: &Config, gpu: &Gpu) -> Opt
     })
 }
 
+/// Several GPUs splitting the layers (`split[d]` layer slots each, the output head the last
+/// slot of the last GPU): they work one after another on each token, so the time is the
+/// sum of each GPU's bytes over its own bandwidth. `None` unless every GPU's bandwidth is
+/// known.
+pub fn estimate_split(
+    model: &ModelInfo,
+    p: Placement,
+    cfg: &Config,
+    gpus: &[Gpu],
+    split: &[u32],
+) -> Option<Speed> {
+    let bws: Vec<u64> = gpus
+        .iter()
+        .map(|g| g.bandwidth_bytes_s)
+        .collect::<Option<_>>()?;
+    let band = backend(&gpus[0]);
+    let (host_bw, host_text) = host_bandwidth(&gpus[0], bws[0]);
+    let n = model.n_layer;
+    let active = match (model.n_expert, model.n_expert_used) {
+        (Some(e), Some(u)) if e > 0 => f64::from(u) / f64::from(e),
+        _ => 1.0,
+    };
+    // The GPU of each GPU-resident layer, in order.
+    let mut device_of = Vec::new();
+    for (d, &k) in split.iter().enumerate() {
+        device_of.extend(std::iter::repeat_n(d, k as usize));
+    }
+    let fills: Vec<u32> = if cfg.ctx > 4096 {
+        vec![4096, cfg.ctx]
+    } else {
+        vec![cfg.ctx]
+    };
+    let mut any_cpu = false;
+    let at = fills
+        .into_iter()
+        .map(|fill| {
+            let mut dev = vec![0f64; gpus.len()];
+            let mut cpu = 0f64;
+            let mut slot = 0;
+            for (il, l) in (0u32..).zip(&model.layers) {
+                let dense = l.bytes.saturating_sub(l.expert_bytes) as f64;
+                let experts = l.expert_bytes as f64 * active;
+                let cells = match (l.swa, model.swa_window) {
+                    (true, Some(w)) => fill.min(w),
+                    _ => fill,
+                };
+                let kv = (footprint::kv_bytes_per_cell(cfg.kv, l).unwrap_or(0) * u64::from(cells))
+                    as f64
+                    * if model.has_kv_cache() { 1.0 } else { 0.0 };
+                if p.layer_on_gpu(il, n) {
+                    let d = device_of.get(slot).copied().unwrap_or(gpus.len() - 1);
+                    slot += 1;
+                    dev[d] += dense + kv;
+                    if il < p.n_cpu_moe {
+                        cpu += experts;
+                    } else {
+                        dev[d] += experts;
+                    }
+                } else {
+                    cpu += dense + experts + kv;
+                }
+            }
+            if p.output_on_gpu(n) {
+                dev[gpus.len() - 1] += model.output_bytes as f64;
+            } else {
+                cpu += model.output_bytes as f64;
+            }
+            any_cpu |= cpu > 0.0;
+            let t = |eff: f64, host: f64, c_us: f64| {
+                dev.iter()
+                    .zip(&bws)
+                    .map(|(b, bw)| b / (*bw as f64 * eff))
+                    .sum::<f64>()
+                    + if cpu > 0.0 { cpu / host } else { 0.0 }
+                    + f64::from(n) * c_us * 1e-6
+            };
+            let slow = t(band.eff.0, host_bw.0, band.per_layer_us.1);
+            let fast = t(band.eff.1, host_bw.1, band.per_layer_us.0);
+            SpeedAt {
+                fill,
+                gpu_bytes: dev.iter().sum::<f64>().round() as u64,
+                cpu_bytes: cpu.round() as u64,
+                tok_s_x10: ((10.0 / slow).round() as u32, (10.0 / fast).round() as u32),
+            }
+        })
+        .collect();
+    Some(Speed {
+        at,
+        backend: band.name,
+        bandwidth_bytes_s: bws.iter().copied().min().unwrap_or(0),
+        bandwidth_basis: format!(
+            "{} GPUs in sequence: {}",
+            gpus.len(),
+            gpus.iter()
+                .map(|g| g.bandwidth_basis.as_str())
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ),
+        host_basis: any_cpu.then_some(host_text),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

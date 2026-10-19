@@ -34,6 +34,12 @@ All notable changes to this project are documented here. The format follows
   them; encoders are planned with no KV cache and one batch per input; commands use
   `--embeddings --pooling` (llama.cpp) and `--runner pooling` (vLLM); `probe --embeddings`
   and `up --verify` check `/v1/embeddings` (ADR 0011).
+- Multi-GPU planning: `plan` splits layers across every NVIDIA GPU by default (as llama.cpp
+  does), checking each GPU against its own budget, and emits `--split-mode layer
+  --tensor-split` with an explicit `--device` list; `--gpu 0,1` / `--gpu 1` choose, and a
+  single GPU on a multi-GPU machine is pinned. vLLM plans pick a tensor-parallel size that
+  divides the attention heads. `--pretend "2x rtx 3090"` / `"rtx 4090 + rtx 3060"`. `up`
+  pools several GPUs with a warning (ADR 0012).
 - Validation intake: an issue form for reports, `cargo xtask intake` turns one into a case
   (and optionally a speed point), CONTRIBUTING.md "Report a run". `scripts/collect-case.sh`
   is replaced by `loadmaster report` (ADR 0010).

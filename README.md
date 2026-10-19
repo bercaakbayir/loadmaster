@@ -47,7 +47,8 @@ Name a file (`hf://org/repo/file.gguf`) for the exact plan; the command then use
 `--hf-repo/--hf-file`, so llama-server downloads that same file. Safetensors repos work with
 `--runtime vllm`. `--pretend` takes a card (`rtx 3090`, `a6000`), a Mac with its RAM
 (`m4 pro 48gb`) or a size (`24GB`, `48GB-unified`); `loadmaster gpu --pretend list` shows the
-catalog. Gated repos need `HF_TOKEN`; headers are cached under `~/.loadmaster/hf`.
+catalog; `--pretend "2x rtx 3090"` plans a split across two cards. Gated repos need
+`HF_TOKEN`; headers are cached under `~/.loadmaster/hf`.
 
 ## Why "loadmaster"?
 

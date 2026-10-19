@@ -146,6 +146,10 @@ pub enum PretendError {
     NeedsRam(String),
     #[error("`{0}`: not a size (expected e.g. `24GB`)")]
     BadSize(String),
+    #[error("a Mac has one GPU; pretend several dedicated cards instead (`2x rtx 3090`)")]
+    MultiUnified,
+    #[error("mixing GPU vendors is not supported; llama.cpp splits across one backend")]
+    MixedVendors,
 }
 
 fn normalise(s: &str) -> String {
@@ -234,15 +238,69 @@ fn unified(name: String, total: u64, bw: Bandwidth) -> HwSnapshot {
     }
 }
 
-/// The hardware a `--pretend` spec describes.
+/// The hardware a `--pretend` spec describes: one or more GPUs joined by `+` (`2x rtx 3090`,
+/// `rtx 4090 + rtx 3060`), and optionally host RAM as a bare size after a `+`.
 pub fn pretend(spec: &str) -> Result<HwSnapshot, PretendError> {
-    let (gpu, host) = match spec.split_once('+') {
-        Some((g, h)) => {
-            let h = normalise(h);
-            (g, Some(size(&h).ok_or(PretendError::BadSize(h))?))
+    let mut host = None;
+    let mut gpus: Vec<&str> = Vec::new();
+    for (i, part) in spec.split('+').map(str::trim).enumerate() {
+        let n = normalise(part);
+        if i > 0
+            && let Some(h) = size(&n)
+        {
+            if host.replace(h).is_some() {
+                return Err(PretendError::BadSize(part.into()));
+            }
+            continue;
         }
-        None => (spec, None),
-    };
+        let (count, gpu) = repeat(part);
+        if !(1..=16).contains(&count) {
+            return Err(PretendError::BadSize(part.into()));
+        }
+        gpus.extend(std::iter::repeat_n(gpu, count as usize));
+    }
+    let mut snaps = gpus
+        .iter()
+        .map(|g| one(g, host))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut out = snaps.remove(0);
+    for s in snaps {
+        out.gpus.extend(s.gpus);
+    }
+    if out.gpus.len() > 1 {
+        if out.gpus.iter().any(|g| g.memory == MemoryKind::Unified) {
+            return Err(PretendError::MultiUnified);
+        }
+        if out.gpus.iter().any(|g| g.vendor != out.gpus[0].vendor) {
+            return Err(PretendError::MixedVendors);
+        }
+        for (i, g) in out.gpus.iter_mut().enumerate() {
+            g.index = i as u32;
+        }
+    }
+    Ok(out)
+}
+
+/// `2x rtx 3090` / `2 x 3090` / `2× 3090` → (2, `rtx 3090`); anything else is one GPU.
+fn repeat(part: &str) -> (u32, &str) {
+    let t = part.trim();
+    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0 {
+        let rest = t[digits..].trim_start();
+        for x in ["x", "X", "×"] {
+            if let Some(gpu) = rest.strip_prefix(x)
+                && let Ok(n) = t[..digits].parse()
+                && !gpu.trim().is_empty()
+            {
+                return (n, gpu.trim());
+            }
+        }
+    }
+    (1, t)
+}
+
+/// One GPU from the catalog or a raw size, with `host` RAM.
+fn one(gpu: &str, host: Option<u64>) -> Result<HwSnapshot, PretendError> {
     let s = normalise(gpu);
 
     if let Some(c) = CARDS.iter().find(|c| c.aliases.contains(&s.as_str())) {
@@ -384,7 +442,7 @@ mod tests {
         assert_eq!(pretend("3090").unwrap().host.total_bytes, DEFAULT_HOST);
         assert!(matches!(
             pretend("3090+lots"),
-            Err(PretendError::BadSize(_))
+            Err(PretendError::Unknown { .. })
         ));
     }
 
@@ -436,6 +494,23 @@ mod tests {
                 c.name
             );
         }
+    }
+
+    #[test]
+    fn several_gpus() {
+        let s = pretend("2x rtx 3090").unwrap();
+        assert_eq!(s.gpus.len(), 2);
+        assert_eq!((s.gpus[0].index, s.gpus[1].index), (0, 1));
+        assert!(s.gpus.iter().all(|g| g.name.contains("RTX 3090")));
+        let s = pretend("rtx 4090 + rtx 3060 + 128GB").unwrap();
+        assert_eq!(s.gpus.len(), 2);
+        assert!(s.gpus[1].name.contains("3060"));
+        assert_eq!(s.host.total_bytes, 128 * GIB);
+        assert_eq!(pretend("4 x a6000").unwrap().gpus.len(), 4);
+        // A card name that starts with digits is not a count.
+        assert_eq!(pretend("4090").unwrap().gpus.len(), 1);
+        assert_eq!(pretend("2x m4 max 64gb"), Err(PretendError::MultiUnified));
+        assert!(pretend("0x 3090").is_err());
     }
 
     #[test]

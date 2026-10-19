@@ -92,16 +92,45 @@ pub(crate) fn plan(
     }
 
     let headroom = headroom_for(gpu, req.headroom);
-    let util_x100 = (gpu.usable_bytes.saturating_sub(headroom.bytes) * 100
-        / gpu.total_bytes.max(1))
-    .min(MAX_UTILIZATION_X100);
-    let pool = gpu.total_bytes / 100 * util_x100;
+    // Tensor parallel over several GPUs: the largest size that divides the attention heads
+    // (vLLM's only divisibility check; KV heads are replicated when fewer than the size).
+    let all: Vec<&Gpu> = std::iter::once(gpu).chain(&req.extra_gpus).collect();
+    let tp = [8usize, 4, 2, 1]
+        .into_iter()
+        .find(|&t| t <= all.len() && model.n_head as usize % t == 0)
+        .unwrap_or(1);
+    let used = &all[..tp];
+    if tp < all.len() {
+        warnings.push(format!(
+            "vLLM's tensor-parallel size must divide the {} attention heads: using {tp} of {} GPUs; set CUDA_VISIBLE_DEVICES to the ones you want",
+            model.n_head,
+            all.len()
+        ));
+    }
+    if used.iter().any(|g| g.total_bytes != used[0].total_bytes) {
+        warnings
+            .push("vLLM sizes every GPU in a tensor-parallel group like the smallest one".into());
+    }
+    // --gpu-memory-utilization is one fraction of each GPU's total; the tightest GPU sets it.
+    let util_x100 = used
+        .iter()
+        .map(|g| g.usable_bytes.saturating_sub(headroom.bytes) * 100 / g.total_bytes.max(1))
+        .min()
+        .unwrap_or(0)
+        .min(MAX_UTILIZATION_X100);
+    let total = used.iter().map(|g| g.total_bytes).min().unwrap_or(0);
+    let pool = total / 100 * util_x100;
     let vision = model.mmproj.as_ref().map_or(0, |m| m.weight_bytes);
     let weights = model.weight_bytes - vision;
     let activation = activation_bytes(model);
     let mm = crate::footprint::mmproj(model);
-    let fixed = weights + activation + mm.as_ref().map_or(0, |t| t.bytes);
-    let kv_budget = pool.saturating_sub(fixed);
+    // Per GPU: a 1/tp shard of the weights, plus the activation reserve and the vision
+    // tower, which every rank holds.
+    let fixed = weights / tp as u64 + activation + mm.as_ref().map_or(0, |t| t.bytes);
+    // KV pool across the group, divided by how many times KV heads are replicated.
+    let n_kv = u64::from(model.n_head_kv.max(1));
+    let kv_per_rank = (n_kv / tp as u64).max(1);
+    let kv_budget = pool.saturating_sub(fixed) * tp as u64 * n_kv / (kv_per_rank * tp as u64);
 
     let kv_order: Vec<KvType> = match req.kv {
         Some(kv) => vec![kv],
@@ -128,7 +157,7 @@ pub(crate) fn plan(
                 kv_name(kv),
                 max.map_or("0".into(), |m| m.to_string())
             ),
-            gpu_bytes: fixed + need + headroom.bytes,
+            gpu_bytes: (fixed + headroom.bytes) * tp as u64 + need,
             host_bytes: 0,
             fits: ok,
         });
@@ -145,33 +174,52 @@ pub(crate) fn plan(
             .find_map(|&kv| max_ctx(model, kv, kv_budget, model.n_ctx_train).map(|m| (kv, m)));
     }
 
+    let ranks = tp as u64;
+    let per_gpu = |s: String| {
+        if tp > 1 {
+            format!("{s}; x {tp} GPUs")
+        } else {
+            s
+        }
+    };
     let headroom_term = Term {
         key: "headroom",
-        bytes: headroom.bytes,
-        detail: format!("{}; outside --gpu-memory-utilization", headroom.basis),
+        bytes: headroom.bytes * ranks,
+        detail: per_gpu(format!(
+            "{}; outside --gpu-memory-utilization",
+            headroom.basis
+        )),
     };
     let mut terms = vec![
         Term {
             key: "weights",
             bytes: weights,
-            detail: "every tensor on GPU (vLLM does not offload by default)".into(),
+            detail: if tp > 1 {
+                format!("every tensor on GPU, sharded {tp} ways (tensor parallel)")
+            } else {
+                "every tensor on GPU (vLLM does not offload by default)".into()
+            },
         },
         Term {
             key: "activation",
-            bytes: activation,
-            detail: format!(
+            bytes: activation * ranks,
+            detail: per_gpu(format!(
                 "vLLM profiling reserve: 512 MiB + 20 MiB x {:.1}B params",
                 model.params_b()
-            ),
+            )),
         },
     ];
-    terms.extend(mm);
+    terms.extend(mm.map(|t| Term {
+        bytes: t.bytes * ranks,
+        detail: per_gpu(t.detail),
+        ..t
+    }));
 
     let Some((kv, max)) = chosen else {
         // Bytes missing for the smallest acceptable KV: the requested context, or one block.
         let last = *kv_order.last().unwrap_or(&KvType::Fp8);
         let want = kv_bytes(model, req.ctx.unwrap_or(BLOCK), last);
-        let short_by = (fixed + want).saturating_sub(pool).max(1);
+        let short_by = ((fixed + want / ranks).saturating_sub(pool) * ranks).max(1);
         terms.push(headroom_term);
         let gpu_bytes = terms.iter().map(|t| t.bytes).sum();
         return Err(Error::CannotFit(Box::new(NoFit {
@@ -185,6 +233,7 @@ pub(crate) fn plan(
                 gpu_bytes,
                 host: vec![],
                 host_bytes: 0,
+                per_device: Vec::new(),
             },
             trials,
             fixes: vec![
@@ -254,6 +303,16 @@ pub(crate) fn plan(
             gpu_bytes,
             host: vec![],
             host_bytes: 0,
+            per_device: if tp > 1 {
+                used.iter()
+                    .map(|_| crate::footprint::DeviceSide {
+                        layers: model.n_layer,
+                        bytes: gpu_bytes / ranks,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            },
         },
         budget: gpu.usable_bytes,
         host_budget: host_budget(&hw.host),
@@ -265,6 +324,12 @@ pub(crate) fn plan(
         config_file: None,
         alternatives: Vec::new(),
         mmproj_on_cpu: false,
+        gpus: if tp > 1 {
+            used.iter().map(|g| (*g).clone()).collect()
+        } else {
+            Vec::new()
+        },
+        devices: Vec::new(),
         speed: None,
     };
     plan.argv = emit::vllm::argv(&plan, util_x100);

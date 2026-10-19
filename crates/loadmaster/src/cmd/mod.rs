@@ -145,6 +145,40 @@ pub fn default_runtime(m: &loadmaster_model::ModelInfo) -> loadmaster_plan::Runt
     }
 }
 
+/// The GPUs to plan for: `auto` or `all` (every NVIDIA GPU, the way llama.cpp splits by
+/// default; otherwise the one with most usable memory), a list of indices `0,1`, or one
+/// GPU by index or part of its name. The first is the primary; the rest are split onto.
+pub fn pick_gpus(
+    snap: &loadmaster_hw::HwSnapshot,
+    query: &str,
+) -> anyhow::Result<(loadmaster_hw::Gpu, Vec<loadmaster_hw::Gpu>)> {
+    use loadmaster_hw::{MemoryKind, Vendor};
+    let splittable =
+        |g: &&loadmaster_hw::Gpu| g.vendor == Vendor::Nvidia && g.memory == MemoryKind::Dedicated;
+    let mut chosen: Vec<loadmaster_hw::Gpu> = match query {
+        "auto" | "all" => {
+            let many: Vec<_> = snap.gpus.iter().filter(splittable).cloned().collect();
+            if many.len() > 1 {
+                many
+            } else {
+                vec![pick_gpu(snap, "auto")?]
+            }
+        }
+        q if q.contains(',') => q
+            .split(',')
+            .map(|i| pick_gpu(snap, i.trim()))
+            .collect::<anyhow::Result<_>>()?,
+        q => vec![pick_gpu(snap, q)?],
+    };
+    if chosen.len() > 1 && !chosen.iter().all(|g| splittable(&g)) {
+        anyhow::bail!("splitting across GPUs is supported for NVIDIA cards only");
+    }
+    chosen.sort_by_key(|g| g.index);
+    chosen.dedup_by_key(|g| g.index);
+    let first = chosen.remove(0);
+    Ok((first, chosen))
+}
+
 /// The GPU to plan for: `auto` (most usable memory), an index, or part of a name.
 pub fn pick_gpu(
     snap: &loadmaster_hw::HwSnapshot,

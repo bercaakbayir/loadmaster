@@ -58,6 +58,9 @@ pub struct PlanRequest {
     pub n_ubatch: u32,
     /// Put the vision projector on the GPU (llama.cpp's default).
     pub mmproj_offload: bool,
+    /// More GPUs to split the layers across, after the one passed to [`plan`]
+    /// (llama.cpp `--split-mode layer`). Empty: one GPU.
+    pub extra_gpus: Vec<Gpu>,
 }
 
 impl Default for PlanRequest {
@@ -69,6 +72,7 @@ impl Default for PlanRequest {
             headroom: None,
             n_ubatch: DEFAULT_UBATCH,
             mmproj_offload: true,
+            extra_gpus: Vec::new(),
         }
     }
 }
@@ -147,6 +151,13 @@ pub struct Plan {
     pub config_file: Option<ConfigFile>,
     /// Nearby configurations: more context, the next quant up and down, no offload.
     pub alternatives: Vec<Alternative>,
+    /// Every GPU the layers are split across, when more than one (`gpu` is the first).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gpus: Vec<Gpu>,
+    /// llama.cpp `--device` names to pin, when the machine has more GPUs than the plan
+    /// uses (otherwise llama.cpp splits across every visible GPU).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<String>,
     /// The vision projector stays on the CPU (`--no-mmproj-offload`).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub mmproj_on_cpu: bool,
@@ -199,6 +210,8 @@ pub enum Error {
 struct Search<'a> {
     model: &'a ModelInfo,
     gpu: &'a Gpu,
+    /// Every GPU the layers may go on, `gpu` first.
+    gpus: Vec<&'a Gpu>,
     host_budget: u64,
     host_total: u64,
     headroom: Headroom,
@@ -229,6 +242,11 @@ impl Search<'_> {
             flash_attn: true,
             headroom: self.headroom.clone(),
             mmproj_on_gpu: self.mmproj_on_gpu,
+            devices: if self.gpus.len() > 1 {
+                self.gpus.iter().map(|g| g.usable_bytes).collect()
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -251,7 +269,28 @@ impl Search<'_> {
     }
 
     fn fits(&self, c: &Candidate) -> bool {
-        c.fp.gpu_bytes <= self.gpu.usable_bytes && self.host_need(c) <= self.host_budget
+        let gpu_ok = if c.fp.per_device.is_empty() {
+            c.fp.gpu_bytes <= self.gpu.usable_bytes
+        } else {
+            c.fp.per_device
+                .iter()
+                .zip(&self.gpus)
+                .all(|(d, g)| d.bytes <= g.usable_bytes)
+        };
+        gpu_ok && self.host_need(c) <= self.host_budget
+    }
+
+    /// Bytes over the GPU budget(s).
+    fn gpu_over(&self, c: &Candidate) -> u64 {
+        if c.fp.per_device.is_empty() {
+            c.fp.gpu_bytes.saturating_sub(self.gpu.usable_bytes)
+        } else {
+            c.fp.per_device
+                .iter()
+                .zip(&self.gpus)
+                .map(|(d, g)| d.bytes.saturating_sub(g.usable_bytes))
+                .sum()
+        }
     }
 
     /// RAM a plan should leave unused: [`UNIFIED_RAM_MARGIN_PCT`] of the available RAM on
@@ -430,6 +469,34 @@ pub(crate) fn plan_one(
     }
 }
 
+/// `--device` names for the GPUs a llama.cpp plan uses, when the machine has others
+/// llama.cpp would otherwise also use. NVIDIA only: CUDA names devices `CUDA<i>`.
+fn device_names(hw: &HwSnapshot, used: &[&Gpu]) -> Vec<String> {
+    let nvidia = hw
+        .gpus
+        .iter()
+        .filter(|g| g.vendor == Vendor::Nvidia)
+        .count();
+    if nvidia > 1 && used.iter().all(|g| g.vendor == Vendor::Nvidia) {
+        used.iter().map(|g| format!("CUDA{}", g.index)).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// CUDA numbers GPUs fastest-first unless told otherwise; the index loadmaster reads (NVML,
+/// PCI bus order) then names a different card when the GPUs differ.
+fn device_order_warning(hw: &HwSnapshot) -> Option<String> {
+    let nvidia: Vec<&Gpu> = hw
+        .gpus
+        .iter()
+        .filter(|g| g.vendor == Vendor::Nvidia)
+        .collect();
+    (nvidia.len() > 1 && nvidia.iter().any(|g| g.name != nvidia[0].name)).then(|| {
+        "the GPUs differ: run with CUDA_DEVICE_ORDER=PCI_BUS_ID so CUDA<i> in the command is the card loadmaster planned for (CUDA otherwise numbers them fastest first)".into()
+    })
+}
+
 fn common_warnings(model: &ModelInfo) -> Vec<String> {
     let mut warnings = Vec::new();
     if !model.arch_known {
@@ -464,6 +531,7 @@ fn search_plan(
     let s = Search {
         model,
         gpu,
+        gpus: std::iter::once(gpu).chain(&req.extra_gpus).collect(),
         host_budget: host_budget(&hw.host),
         host_total: hw.host.total_bytes,
         headroom: headroom_for(gpu, req.headroom),
@@ -617,7 +685,22 @@ fn search_plan(
             "q4_0 KV cache measurably lowers output quality; consider a smaller --ctx or a smaller quant".into(),
         );
     }
+    if req.runtime == Runtime::LlamaCpp
+        && let Some(w) = device_order_warning(hw)
+    {
+        warnings.push(w);
+    }
+    if !c.fp.per_device.is_empty() {
+        warnings.push(
+            "split across GPUs: per-GPU compute buffers are assumed full size (unvalidated); llama.cpp may also enable pipeline parallelism".into(),
+        );
+    }
     let host_need = s.host_need(&c);
+    let split_gpus: Vec<Gpu> = if c.fp.per_device.is_empty() {
+        Vec::new()
+    } else {
+        s.gpus.iter().map(|g| (*g).clone()).collect()
+    };
     if !s.fits_safely(&c) {
         let spare = s.host_budget.saturating_sub(host_need);
         let fix = match s.max_ctx_where(ctx.saturating_sub(1), Search::full_fits_safely) {
@@ -630,6 +713,16 @@ fn search_plan(
             gib(s.host_budget)
         ));
     }
+    let speed = match req.runtime {
+        Runtime::LlamaCpp if !model.is_embedding() && !c.fp.per_device.is_empty() => {
+            let split: Vec<u32> = c.fp.per_device.iter().map(|d| d.layers).collect();
+            speed::estimate_split(model, c.placement, &c.cfg, &split_gpus, &split)
+        }
+        Runtime::LlamaCpp if !model.is_embedding() => {
+            speed::estimate(model, c.placement, &c.cfg, gpu)
+        }
+        _ => None,
+    };
     let mut plan = Plan {
         model: summary(model),
         gpu: gpu.clone(),
@@ -652,12 +745,9 @@ fn search_plan(
         config_file: None,
         alternatives: Vec::new(),
         mmproj_on_cpu: model.mmproj.is_some() && !req.mmproj_offload,
-        speed: match req.runtime {
-            Runtime::LlamaCpp if !model.is_embedding() => {
-                speed::estimate(model, c.placement, &c.cfg, gpu)
-            }
-            _ => None,
-        },
+        devices: device_names(hw, &s.gpus),
+        gpus: split_gpus,
+        speed,
     };
     match req.runtime {
         Runtime::Exl3 => {
@@ -696,7 +786,7 @@ impl State {
 }
 
 fn overshoot(s: &Search<'_>, c: &Candidate) -> u64 {
-    c.fp.gpu_bytes.saturating_sub(s.gpu.usable_bytes) + s.host_need(c).saturating_sub(s.host_budget)
+    s.gpu_over(c) + s.host_need(c).saturating_sub(s.host_budget)
 }
 
 fn default_ctx(s: &Search<'_>, kv_order: &[KvType]) -> (u32, String) {
@@ -788,7 +878,7 @@ fn no_fit(
     closest: Candidate,
     trials: Vec<Trial>,
 ) -> Error {
-    let gpu_over = closest.fp.gpu_bytes.saturating_sub(s.gpu.usable_bytes);
+    let gpu_over = s.gpu_over(&closest);
     let host_over = s.host_need(&closest).saturating_sub(s.host_budget);
     let (limit, short_by) = if gpu_over >= host_over {
         ("gpu", gpu_over)

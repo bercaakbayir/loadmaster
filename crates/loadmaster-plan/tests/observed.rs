@@ -128,6 +128,7 @@ fn planner_matches_observed_buffers() {
                 kv,
                 flash_attn: a.flash_attn,
                 mmproj_on_gpu: true,
+                devices: Vec::new(),
                 headroom: Headroom {
                     bytes: 0,
                     basis: String::new(),

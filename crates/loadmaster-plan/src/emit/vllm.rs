@@ -13,6 +13,9 @@ pub fn argv(plan: &Plan, util_x100: u64) -> Vec<String> {
         .unwrap_or_else(|| plan.model.path.clone());
     let mut a: Vec<String> = vec![BIN.into(), "serve".into(), model];
     a.extend(["--max-model-len".into(), plan.ctx.to_string()]);
+    if plan.gpus.len() > 1 {
+        a.extend(["--tensor-parallel-size".into(), plan.gpus.len().to_string()]);
+    }
     a.extend([
         "--gpu-memory-utilization".into(),
         format!("0.{util_x100:02}"),

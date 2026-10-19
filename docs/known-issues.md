@@ -27,3 +27,9 @@ Run `loadmaster report` on your hardware to add a measured point (ADR 0009).
   maximum image size; Llama 4 tiling is not modelled.
 
 `loadmaster report` on a vision model records the real buffers.
+
+## Multi-GPU (loadmaster's own)
+
+- Split plans assume a full-size compute buffer on every GPU and do not model pipeline
+  parallelism's extra copies; neither is measured yet.
+- `loadmaster up` pools all GPUs into one budget; `init` and `add` plan on one GPU.

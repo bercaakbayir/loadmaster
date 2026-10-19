@@ -1,6 +1,5 @@
 use std::process::ExitCode;
 
-use anyhow::Context;
 use loadmaster_plan::{Error, PlanRequest, explain, gib};
 use serde::Serialize;
 
@@ -21,20 +20,13 @@ pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
         super::Target::Repo { spec, files } => return repo_table(&args, &spec, &files),
     };
     let snap = super::snapshot(&args.hw)?;
-    let gpu =
-        match args.gpu.as_str() {
-            "auto" => snap.best_gpu(),
-            q => Some(snap.find_gpu(q).with_context(|| {
-                format!("no GPU matches `{q}`; run `loadmaster gpu` to list them")
-            })?),
-        }
-        .ok_or(Error::NoGpu)?
-        .clone();
+    let (gpu, extra_gpus) = super::pick_gpus(&snap, &args.gpu)?;
 
     let req = PlanRequest {
         ctx: args.ctx,
         runtime: args.runtime.into(),
         mmproj_offload: !args.no_mmproj_offload,
+        extra_gpus,
         ..PlanRequest::default()
     };
     match loadmaster_plan::plan(&model, &snap, &gpu, &req) {
@@ -192,10 +184,11 @@ fn repo_table(
     let hub = super::hub(args.offline);
     let model = hub.open_gguf(&spec.repo, &spec.rev, &base.file, files)?;
     let snap = super::snapshot(&args.hw)?;
-    let gpu = super::pick_gpu(&snap, &args.gpu)?;
+    let (gpu, extra_gpus) = super::pick_gpus(&snap, &args.gpu)?;
     let req = PlanRequest {
         ctx: args.ctx,
         runtime: args.runtime.into(),
+        extra_gpus,
         ..PlanRequest::default()
     };
     // Header bytes are in the file size but not in the weights.

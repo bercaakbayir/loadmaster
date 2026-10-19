@@ -83,7 +83,21 @@ pub fn up(args: UpArgs) -> anyhow::Result<ExitCode> {
         }
         _ => gpu.usable_bytes,
     };
-    let budget = usable.saturating_sub(headroom);
+    let mut budget = usable.saturating_sub(headroom);
+    // Several NVIDIA GPUs: llama.cpp splits each model across all of them, so they are one
+    // pool here. Which model sits on which GPU is not modelled (ADR 0012).
+    let (_, others) = super::pick_gpus(&snap, "auto")?;
+    if !others.is_empty() {
+        budget += others
+            .iter()
+            .map(|g| g.usable_bytes.saturating_sub(headroom))
+            .sum::<u64>();
+        eprintln!(
+            "warning: {} GPUs treated as one {} pool; per-GPU placement is not modelled, so evictions may free the wrong card",
+            others.len() + 1,
+            loadmaster_plan::gib(budget)
+        );
+    }
 
     let logs = super::state_dir().join("logs");
     let mut stores = Stores::default();

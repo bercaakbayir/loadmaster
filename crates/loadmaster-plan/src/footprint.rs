@@ -107,6 +107,9 @@ pub struct Config {
     /// The vision projector's weights and encoder on the GPU (llama.cpp's default;
     /// `--no-mmproj-offload` keeps them on the CPU).
     pub mmproj_on_gpu: bool,
+    /// Usable bytes of each GPU when splitting layers across several (llama.cpp
+    /// `--split-mode layer`); empty or one entry for a single GPU.
+    pub devices: Vec<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -120,12 +123,24 @@ pub struct Term {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Footprint {
-    /// Device-side terms; they sum to `gpu_bytes`.
+    /// Device-side terms, summed over GPUs; they sum to `gpu_bytes`.
     pub gpu: Vec<Term>,
     pub gpu_bytes: u64,
     /// Host-side terms (weights and KV left on the CPU); they sum to `host_bytes`.
     pub host: Vec<Term>,
     pub host_bytes: u64,
+    /// Per GPU, when the layers are split across several (in device order).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub per_device: Vec<DeviceSide>,
+}
+
+/// One GPU's share of a split plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeviceSide {
+    /// Layer slots on this GPU, the output head counting as one on the last
+    /// (llama.cpp's `--tensor-split` value for it).
+    pub layers: u32,
+    pub bytes: u64,
 }
 
 impl Footprint {
@@ -363,6 +378,77 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             }
         },
     ];
+    // Several GPUs: layers fill them in order (llama.cpp assigns contiguous layers by the
+    // cumulative `--tensor-split`; the output head is a slot on the last GPU). Each GPU
+    // gets its own compute buffer and headroom; the projector goes on the first.
+    let n_dev = cfg.devices.len();
+    let mut per_device = Vec::new();
+    if n_dev > 1 {
+        let compute = gpu
+            .iter()
+            .find(|t| t.key == "compute")
+            .map_or(0, |t| t.bytes);
+        let vision_bytes: u64 = if cfg.mmproj_on_gpu {
+            mmproj(model)
+                .into_iter()
+                .chain(vision_compute(model))
+                .map(|t| t.bytes)
+                .sum()
+        } else {
+            0
+        };
+        let other = if gpu_layers > 0 { model.other_bytes } else { 0 };
+        let fixed =
+            |d: usize| cfg.headroom.bytes + compute + if d == 0 { vision_bytes + other } else { 0 };
+        let costs: Vec<u64> = (0u32..)
+            .zip(&model.layers)
+            .filter(|(il, _)| placement.layer_on_gpu(*il, n_layer))
+            .map(|(il, layer)| {
+                let w = if il < placement.n_cpu_moe {
+                    layer.bytes - layer.expert_bytes
+                } else {
+                    layer.bytes
+                };
+                let kv = if model.has_kv_cache() {
+                    kv_bytes_per_cell(cfg.kv, layer).unwrap_or(0)
+                        * kv_cells(cfg, layer, model.swa_window)
+                } else {
+                    0
+                };
+                w + kv
+            })
+            .collect();
+        let out = if output_gpu { model.output_bytes } else { 0 };
+        let mut layers = vec![0u32; n_dev];
+        let mut bytes: Vec<u64> = (0..n_dev).map(fixed).collect();
+        let mut d = 0;
+        for c in costs {
+            // Move on when this GPU is full; the last one keeps room for the output head.
+            let cap =
+                |d: usize| cfg.devices[d].saturating_sub(if d + 1 == n_dev { out } else { 0 });
+            while d + 1 < n_dev && bytes[d] + c > cap(d) {
+                d += 1;
+            }
+            bytes[d] += c;
+            layers[d] += 1;
+        }
+        if output_gpu {
+            bytes[n_dev - 1] += out;
+            layers[n_dev - 1] += 1;
+        }
+        per_device = layers
+            .into_iter()
+            .zip(bytes)
+            .map(|(layers, bytes)| DeviceSide { layers, bytes })
+            .collect();
+        for t in gpu.iter_mut().filter(|t| t.key == "compute") {
+            t.bytes *= n_dev as u64;
+            t.detail = format!(
+                "{} on each of {n_dev} GPUs (unvalidated for splits)",
+                t.detail
+            );
+        }
+    }
     let vision: Vec<Term> = mmproj(model)
         .into_iter()
         .chain(vision_compute(model))
@@ -375,8 +461,12 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
     gpu.extend(vision_gpu);
     gpu.push(Term {
         key: "headroom",
-        bytes: cfg.headroom.bytes,
-        detail: cfg.headroom.basis.clone(),
+        bytes: cfg.headroom.bytes * n_dev.max(1) as u64,
+        detail: if n_dev > 1 {
+            format!("{} on each of {n_dev} GPUs", cfg.headroom.basis)
+        } else {
+            cfg.headroom.basis.clone()
+        },
     });
     let gpu_bytes = gpu.iter().map(|t| t.bytes).sum();
 
@@ -427,6 +517,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
         gpu_bytes,
         host,
         host_bytes,
+        per_device,
     })
 }
 
@@ -504,6 +595,7 @@ mod tests {
             kv,
             flash_attn: true,
             mmproj_on_gpu: true,
+            devices: Vec::new(),
             headroom: Headroom {
                 bytes: 0,
                 basis: String::new(),

@@ -274,7 +274,8 @@ struct PlanArgs {
     /// Use only Hub headers already cached; never touch the network.
     #[arg(long)]
     offline: bool,
-    /// `auto`, a GPU index, or part of a GPU name from `loadmaster gpu`.
+    /// `auto` (every NVIDIA GPU, as llama.cpp splits by default; else the largest), `all`,
+    /// indices `0,1`, or one GPU by index or part of its name from `loadmaster gpu`.
     #[arg(long, default_value = "auto")]
     gpu: String,
     /// Context length in tokens. Default: the largest that fits fully on the GPU.

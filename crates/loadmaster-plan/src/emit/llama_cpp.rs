@@ -33,6 +33,23 @@ pub fn argv(plan: &Plan) -> Vec<String> {
     }
     a.extend(["-c".into(), plan.ctx.to_string()]);
     a.extend(["-ngl".into(), plan.placement.n_gpu_layers.to_string()]);
+    if !plan.devices.is_empty() {
+        a.extend(["--device".into(), plan.devices.join(",")]);
+    }
+    if !plan.footprint.per_device.is_empty() {
+        let split: Vec<String> = plan
+            .footprint
+            .per_device
+            .iter()
+            .map(|d| d.layers.to_string())
+            .collect();
+        a.extend([
+            "--split-mode".into(),
+            "layer".into(),
+            "--tensor-split".into(),
+            split.join(","),
+        ]);
+    }
     if plan.placement.n_cpu_moe > 0 {
         a.extend(["--n-cpu-moe".into(), plan.placement.n_cpu_moe.to_string()]);
     }

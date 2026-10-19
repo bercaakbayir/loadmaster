@@ -77,20 +77,51 @@ pub fn kv_label(p: &Plan) -> &'static str {
     }
 }
 
+/// `GPU0 20.6 / 23.5 GiB, GPU1 20.3 / 23.5 GiB`.
+fn device_shares(p: &Plan) -> String {
+    p.footprint
+        .per_device
+        .iter()
+        .zip(&p.gpus)
+        .enumerate()
+        .map(|(i, (d, g))| {
+            format!(
+                "GPU{i} {:.1} / {:.1} GiB",
+                d.bytes as f64 / (1u64 << 30) as f64,
+                g.usable_bytes as f64 / (1u64 << 30) as f64
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Default output: one verdict line, the command, warnings.
 pub fn summary(p: &Plan) -> String {
     let mut out = String::new();
     writeln!(out, "{}  ·  ctx {}", model_line(&p.model), p.ctx).unwrap();
-    writeln!(
-        out,
-        "fits: {} of {} usable on {}; {}, {} KV",
-        gib(p.footprint.gpu_bytes),
-        gib(p.budget),
-        p.gpu.name,
-        placement_line(p),
-        kv_label(p)
-    )
-    .unwrap();
+    if p.gpus.is_empty() {
+        writeln!(
+            out,
+            "fits: {} of {} usable on {}; {}, {} KV",
+            gib(p.footprint.gpu_bytes),
+            gib(p.budget),
+            p.gpu.name,
+            placement_line(p),
+            kv_label(p)
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            out,
+            "fits: {} across {} GPUs ({}); {}, {} KV",
+            gib(p.footprint.gpu_bytes),
+            p.gpus.len(),
+            device_shares(p),
+            placement_line(p),
+            kv_label(p)
+        )
+        .unwrap();
+    }
     if let Some(s) = &p.speed {
         writeln!(out, "speed: {} (estimate)", speed_line(s)).unwrap();
     }
@@ -215,20 +246,49 @@ pub fn explain(p: &Plan) -> String {
     writeln!(out, "WEIGHT   {}", model_line(&p.model)).unwrap();
     terms(&mut out, &p.footprint.gpu);
     writeln!(out, "  {}", "-".repeat(30)).unwrap();
-    writeln!(
-        out,
-        "  {:<18}{:>11}   of {} usable on {} ({}{})",
-        "GPU total",
-        gib(p.footprint.gpu_bytes),
-        gib(p.budget),
-        p.gpu.name,
-        p.gpu.usable_basis,
-        match p.gpu.in_use_bytes() {
-            0 => String::new(),
-            b => format!("; {} held by other processes", gib(b)),
-        }
-    )
-    .unwrap();
+    if p.gpus.is_empty() {
+        writeln!(
+            out,
+            "  {:<18}{:>11}   of {} usable on {} ({}{})",
+            "GPU total",
+            gib(p.footprint.gpu_bytes),
+            gib(p.budget),
+            p.gpu.name,
+            p.gpu.usable_basis,
+            match p.gpu.in_use_bytes() {
+                0 => String::new(),
+                b => format!("; {} held by other processes", gib(b)),
+            }
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            out,
+            "  {:<18}{:>11}   of {} usable across {} GPUs; each must fit its own:",
+            "GPU total",
+            gib(p.footprint.gpu_bytes),
+            gib(p.gpus.iter().map(|g| g.usable_bytes).sum()),
+            p.gpus.len()
+        )
+        .unwrap();
+    }
+    for ((d, g), i) in p.footprint.per_device.iter().zip(&p.gpus).zip(0..) {
+        writeln!(
+            out,
+            "  {:<18}{:>11}   of {} usable on {} ({} layer slots{})",
+            format!("  GPU{i}"),
+            gib(d.bytes),
+            gib(g.usable_bytes),
+            g.name,
+            d.layers,
+            if i + 1 == p.gpus.len() {
+                ", incl. output head"
+            } else {
+                ""
+            }
+        )
+        .unwrap();
+    }
     terms(&mut out, &p.footprint.host);
     if p.gpu.memory == loadmaster_hw::MemoryKind::Unified {
         writeln!(

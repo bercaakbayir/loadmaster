@@ -56,8 +56,9 @@ fn bpw(name: &str) -> Option<f64> {
         .map(|(_, b)| *b)
 }
 
-/// `model` with every tensor scaled to another quant's bits per weight.
-fn requantized(model: &ModelInfo, to: &str, ratio: f64) -> ModelInfo {
+/// `model` with every tensor scaled by `ratio` and relabelled as quant `to`: an estimate
+/// of another quant of the same model (from bits per weight, or from file sizes).
+pub fn requantized(model: &ModelInfo, to: &str, ratio: f64) -> ModelInfo {
     let scale = |b: u64| (b as f64 * ratio).round() as u64;
     let mut m = model.clone();
     for l in &mut m.layers {

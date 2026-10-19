@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
   the weights): split GGUFs and a sibling mmproj included, headers cached under
   `~/.loadmaster/hf`, `--offline` for cache only, `HF_TOKEN` for gated repos, `HF_ENDPOINT`
   for mirrors. The command uses `--hf-repo/--hf-file` so llama-server fetches the same file.
+- `plan hf://org/repo` compares every GGUF quant in a repo: one header planned exactly, the
+  rest scaled to their file sizes (within a few hundred bytes of the exact plan on Llama
+  3.2 1B), with the largest quant that fits entirely on the GPU suggested. `--json` too.
 
 ### Added (probe, verify, eval)
 - `loadmaster probe <url> --model <name>`: ten declarative YAML fixtures (template, tool

@@ -278,3 +278,43 @@ fn missing_files_and_offline_misses_are_errors() {
     assert_eq!(o.status.code(), Some(3));
     assert!(text(&o).1.contains("--offline"), "{}", text(&o).1);
 }
+
+#[test]
+fn a_bare_repo_compares_its_quants() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&PLAN[..], &["hf://fx/qwen3-8b-GGUF", "--json"]].concat(),
+    );
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let q = v["quants"].as_array().unwrap();
+    assert_eq!(q.len(), 2);
+    assert_eq!(
+        (q[0]["quant"].as_str(), q[0]["exact"].as_bool()),
+        (Some("Q4_K_M"), Some(true))
+    );
+    assert_eq!(
+        (q[1]["quant"].as_str(), q[1]["exact"].as_bool()),
+        (Some("Q8_0"), Some(false))
+    );
+    // The Q8_0 file is 1.7x the size, so its estimate is about 1.7x the weights.
+    assert!(q[1]["gpu_bytes"].as_u64() > q[0]["gpu_bytes"].as_u64());
+
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&PLAN[..], &["hf://fx/qwen3-8b-GGUF"]].concat(),
+    );
+    let out = text(&o).0;
+    assert!(out.contains("Q8_0") && out.contains("  *"), "{out}");
+    assert!(
+        out.contains("loadmaster plan hf://fx/qwen3-8b-GGUF/"),
+        "{out}"
+    );
+}

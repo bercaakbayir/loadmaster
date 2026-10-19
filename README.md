@@ -20,7 +20,9 @@ alternatives:
 ```
 
 `--explain` prints every term of the budget (weights, KV cache, compute buffer, vision
-projector, headroom) with its inputs, and every configuration that was tried.
+projector, headroom) with its inputs, and every configuration that was tried. When the GPU's
+memory bandwidth is known, plans also estimate generation speed, as a band fitted to
+published llama.cpp benchmarks (`speed: ~103-144 tok/s generating at 4k context`; ADR 0009).
 
 ### Try it without the GPU or the download
 

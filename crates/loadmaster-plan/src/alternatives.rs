@@ -21,6 +21,9 @@ pub struct Alternative {
     pub placement: String,
     /// Estimated slowdown versus everything on the GPU, as `(low, high)` x 100.
     pub slowdown_x100: Option<(u32, u32)>,
+    /// Estimated generation speed (tok/s x10, low and high) when bandwidth is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tok_s_x10: Option<(u32, u32)>,
     /// Caveats, e.g. that a quant size is estimated.
     pub note: Option<String>,
 }
@@ -76,36 +79,11 @@ pub fn requantized(model: &ModelInfo, to: &str, ratio: f64) -> ModelInfo {
 /// Share of per-token weight reads that happen on the CPU. For MoE only the routed
 /// experts in use are read, so CPU-side experts count at `n_used / n_expert`.
 fn cpu_read_fraction(model: &ModelInfo, p: Placement) -> f64 {
-    let n = model.n_layer;
-    let active = match (model.n_expert, model.n_expert_used) {
-        (Some(e), Some(u)) if e > 0 => f64::from(u) / f64::from(e),
-        _ => 1.0,
-    };
-    let (mut gpu, mut cpu) = (0.0, 0.0);
-    for (il, l) in (0u32..).zip(&model.layers) {
-        let dense = (l.bytes - l.expert_bytes) as f64;
-        let experts = l.expert_bytes as f64 * active;
-        if p.layer_on_gpu(il, n) {
-            gpu += dense;
-            if il < p.n_cpu_moe {
-                cpu += experts;
-            } else {
-                gpu += experts;
-            }
-        } else {
-            cpu += dense + experts;
-        }
-    }
-    let out = model.output_bytes as f64;
-    if p.output_on_gpu(n) {
-        gpu += out;
-    } else {
-        cpu += out;
-    }
-    if gpu + cpu == 0.0 {
+    let (gpu, cpu) = crate::speed::weight_reads(model, p);
+    if gpu + cpu == 0 {
         0.0
     } else {
-        cpu / (gpu + cpu)
+        cpu as f64 / (gpu + cpu) as f64
     }
 }
 
@@ -165,6 +143,11 @@ fn row(
             delta_bytes: delta(p.footprint.gpu_bytes),
             placement: placement_text(&p),
             slowdown_x100: slowdown_x100(model, p.placement, gpu),
+            tok_s_x10: p
+                .speed
+                .as_ref()
+                .and_then(|s| s.at.first())
+                .map(|a| a.tok_s_x10),
             note,
         }),
         Err(Error::CannotFit(n)) => Some(Alternative {
@@ -176,6 +159,7 @@ fn row(
             delta_bytes: delta(n.closest.gpu_bytes),
             placement: format!("does not fit ({} short)", crate::gib(n.short_by)),
             slowdown_x100: None,
+            tok_s_x10: None,
             note,
         }),
         Err(_) => None,

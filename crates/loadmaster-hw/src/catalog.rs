@@ -113,21 +113,27 @@ fn gbs_to_bytes(gbs: f64) -> u64 {
 pub fn bandwidth_for(name: &str) -> Option<(u64, String)> {
     let s = normalise(name);
     if let Some(c) = CARDS.iter().find(|c| c.aliases.contains(&s.as_str())) {
-        return Some((
-            gbs_to_bytes(c.bandwidth_gbs),
-            format!("{} GB/s, {} spec sheet", c.bandwidth_gbs, c.name),
-        ));
+        return Some(card_bandwidth(c));
     }
-    CHIPS.iter().find(|c| c.key == s).map(|c| {
-        (
-            gbs_to_bytes(c.bandwidth_gbs),
-            if c.note.is_empty() {
-                format!("{} GB/s, Apple spec", c.bandwidth_gbs)
-            } else {
-                format!("{} GB/s, Apple spec ({})", c.bandwidth_gbs, c.note)
-            },
-        )
-    })
+    CHIPS.iter().find(|c| c.key == s).map(chip_bandwidth)
+}
+
+fn card_bandwidth(c: &Card) -> (u64, String) {
+    (
+        gbs_to_bytes(c.bandwidth_gbs),
+        format!("{} GB/s, {} spec sheet", c.bandwidth_gbs, c.name),
+    )
+}
+
+fn chip_bandwidth(c: &Chip) -> (u64, String) {
+    (
+        gbs_to_bytes(c.bandwidth_gbs),
+        if c.note.is_empty() {
+            format!("{} GB/s, Apple spec", c.bandwidth_gbs)
+        } else {
+            format!("{} GB/s, Apple spec ({})", c.bandwidth_gbs, c.note)
+        },
+    )
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -244,7 +250,7 @@ pub fn pretend(spec: &str) -> Result<HwSnapshot, PretendError> {
             c.name.into(),
             c.vram_mib * MIB,
             host,
-            bandwidth_for(c.name),
+            Some(card_bandwidth(c)),
         ));
     }
 
@@ -294,7 +300,7 @@ pub fn pretend(spec: &str) -> Result<HwSnapshot, PretendError> {
                 return Ok(unified(
                     format!("{} {}", c.name, crate::gib_str(total)),
                     total,
-                    bandwidth_for(c.name),
+                    Some(chip_bandwidth(c)),
                 ));
             }
         }
@@ -408,6 +414,28 @@ mod tests {
             pretend("24GB@fast"),
             Err(PretendError::BadSize(_))
         ));
+    }
+
+    #[test]
+    fn every_catalog_entry_has_its_bandwidth() {
+        for c in CARDS {
+            let g = gpu(c.aliases[0]);
+            assert_eq!(
+                g.bandwidth_bytes_s,
+                Some(gbs_to_bytes(c.bandwidth_gbs)),
+                "{}",
+                c.name
+            );
+        }
+        for c in CHIPS {
+            let g = gpu(&format!("{} 16gb", c.key));
+            assert_eq!(
+                g.bandwidth_bytes_s,
+                Some(gbs_to_bytes(c.bandwidth_gbs)),
+                "{}",
+                c.name
+            );
+        }
     }
 
     #[test]

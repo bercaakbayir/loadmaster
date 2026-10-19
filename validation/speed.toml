@@ -1,0 +1,440 @@
+# Published llama.cpp token-generation results (llama-bench tg128, LLaMA 2 7B, 32 layers),
+# with the device's peak memory bandwidth. `cargo test -p loadmaster-plan` checks that the
+# speed estimate's band contains every one (crates/loadmaster-plan/src/speed.rs).
+# Add points from `loadmaster report` runs as they arrive; see ADR 0009.
+#
+# Metal: https://github.com/ggml-org/llama.cpp/discussions/4167 (summary table, commit 8e672ef)
+# CUDA:  https://github.com/ggml-org/llama.cpp/discussions/15013 (scoreboard)
+# Model sizes from llama-bench: Q4_0 3.56 GiB, Q8_0 6.67 GiB, F16 12.55 GiB.
+
+[[point]]
+device = "Apple M1 (7-core GPU)"
+backend = "metal"
+bandwidth_gbs = 68.25
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 14.19
+
+[[point]]
+device = "Apple M1 (7-core GPU)"
+backend = "metal"
+bandwidth_gbs = 68.25
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 7.92
+
+[[point]]
+device = "Apple M1 (8-core GPU)"
+backend = "metal"
+bandwidth_gbs = 68.25
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 14.15
+
+[[point]]
+device = "Apple M1 (8-core GPU)"
+backend = "metal"
+bandwidth_gbs = 68.25
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 7.91
+
+[[point]]
+device = "Apple M2 Pro (16-core GPU)"
+backend = "metal"
+bandwidth_gbs = 200
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 37.87
+
+[[point]]
+device = "Apple M2 Pro (16-core GPU)"
+backend = "metal"
+bandwidth_gbs = 200
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 22.7
+
+[[point]]
+device = "Apple M2 Pro (16-core GPU)"
+backend = "metal"
+bandwidth_gbs = 200
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 12.47
+
+[[point]]
+device = "Apple M2 Pro (19-core GPU)"
+backend = "metal"
+bandwidth_gbs = 200
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 38.86
+
+[[point]]
+device = "Apple M2 Pro (19-core GPU)"
+backend = "metal"
+bandwidth_gbs = 200
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 23.01
+
+[[point]]
+device = "Apple M2 Pro (19-core GPU)"
+backend = "metal"
+bandwidth_gbs = 200
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 13.06
+
+[[point]]
+device = "Apple M2 Max (30-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 60.99
+
+[[point]]
+device = "Apple M2 Max (30-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 39.97
+
+[[point]]
+device = "Apple M2 Max (30-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 24.16
+
+[[point]]
+device = "Apple M2 Max (38-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 65.95
+
+[[point]]
+device = "Apple M2 Max (38-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 41.83
+
+[[point]]
+device = "Apple M2 Max (38-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 24.65
+
+[[point]]
+device = "Apple M2 Ultra (60-core GPU)"
+backend = "metal"
+bandwidth_gbs = 800
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 88.64
+
+[[point]]
+device = "Apple M2 Ultra (60-core GPU)"
+backend = "metal"
+bandwidth_gbs = 800
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 62.14
+
+[[point]]
+device = "Apple M2 Ultra (60-core GPU)"
+backend = "metal"
+bandwidth_gbs = 800
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 39.86
+
+[[point]]
+device = "Apple M2 Ultra (76-core GPU)"
+backend = "metal"
+bandwidth_gbs = 800
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 94.27
+
+[[point]]
+device = "Apple M2 Ultra (76-core GPU)"
+backend = "metal"
+bandwidth_gbs = 800
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 66.64
+
+[[point]]
+device = "Apple M2 Ultra (76-core GPU)"
+backend = "metal"
+bandwidth_gbs = 800
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 41.02
+
+[[point]]
+device = "Apple M3 Max (30-core GPU)"
+backend = "metal"
+bandwidth_gbs = 300
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 56.58
+
+[[point]]
+device = "Apple M3 Max (30-core GPU)"
+backend = "metal"
+bandwidth_gbs = 300
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 34.3
+
+[[point]]
+device = "Apple M3 Max (30-core GPU)"
+backend = "metal"
+bandwidth_gbs = 300
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 19.54
+
+[[point]]
+device = "Apple M3 Max (40-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 66.31
+
+[[point]]
+device = "Apple M3 Max (40-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 42.75
+
+[[point]]
+device = "Apple M3 Max (40-core GPU)"
+backend = "metal"
+bandwidth_gbs = 400
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 25.09
+
+[[point]]
+device = "Apple M4 Pro (16-core GPU)"
+backend = "metal"
+bandwidth_gbs = 273
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 49.64
+
+[[point]]
+device = "Apple M4 Pro (16-core GPU)"
+backend = "metal"
+bandwidth_gbs = 273
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 30.54
+
+[[point]]
+device = "Apple M4 Pro (16-core GPU)"
+backend = "metal"
+bandwidth_gbs = 273
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 17.19
+
+[[point]]
+device = "Apple M4 Pro (20-core GPU)"
+backend = "metal"
+bandwidth_gbs = 273
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 50.74
+
+[[point]]
+device = "Apple M4 Pro (20-core GPU)"
+backend = "metal"
+bandwidth_gbs = 273
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 30.69
+
+[[point]]
+device = "Apple M4 Pro (20-core GPU)"
+backend = "metal"
+bandwidth_gbs = 273
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 17.18
+
+[[point]]
+device = "Apple M4 Max (32-core GPU)"
+backend = "metal"
+bandwidth_gbs = 410
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 69.95
+
+[[point]]
+device = "Apple M4 Max (32-core GPU)"
+backend = "metal"
+bandwidth_gbs = 410
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 43.87
+
+[[point]]
+device = "Apple M4 Max (32-core GPU)"
+backend = "metal"
+bandwidth_gbs = 410
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 24.29
+
+[[point]]
+device = "Apple M4 Max (40-core GPU)"
+backend = "metal"
+bandwidth_gbs = 546
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 83.06
+
+[[point]]
+device = "Apple M4 Max (40-core GPU)"
+backend = "metal"
+bandwidth_gbs = 546
+n_layer = 32
+quant = "Q8_0"
+model_gib = 6.67
+tg_tok_s = 54.05
+
+[[point]]
+device = "Apple M4 Max (40-core GPU)"
+backend = "metal"
+bandwidth_gbs = 546
+n_layer = 32
+quant = "F16"
+model_gib = 12.55
+tg_tok_s = 31.64
+
+[[point]]
+device = "RTX 3090"
+backend = "cuda"
+bandwidth_gbs = 936
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 158.16
+
+[[point]]
+device = "RTX 3090 (flash attn)"
+backend = "cuda"
+bandwidth_gbs = 936
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 161.89
+
+[[point]]
+device = "RTX 4090"
+backend = "cuda"
+bandwidth_gbs = 1008
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 186.21
+
+[[point]]
+device = "RTX 4090 (flash attn)"
+backend = "cuda"
+bandwidth_gbs = 1008
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 188.96
+
+[[point]]
+device = "RTX 3080"
+backend = "cuda"
+bandwidth_gbs = 760
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 139.65
+
+[[point]]
+device = "RTX 4070 Ti Super"
+backend = "cuda"
+bandwidth_gbs = 672
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 132.26
+
+[[point]]
+device = "A100 80GB (PCIe or SXM not stated; SXM bandwidth)"
+backend = "cuda"
+bandwidth_gbs = 2039
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 190.88
+
+[[point]]
+device = "A100 80GB (PCIe or SXM not stated; PCIe bandwidth)"
+backend = "cuda"
+bandwidth_gbs = 1935
+n_layer = 32
+quant = "Q4_0"
+model_gib = 3.56
+tg_tok_s = 190.88

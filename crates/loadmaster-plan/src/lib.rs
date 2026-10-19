@@ -7,6 +7,7 @@ pub mod alternatives;
 pub mod emit;
 pub mod explain;
 pub mod footprint;
+pub mod speed;
 mod vllm;
 
 use loadmaster_hw::{Gpu, Host, HwSnapshot, MIB, MemoryKind, Vendor};
@@ -136,6 +137,9 @@ pub struct Plan {
     pub config_file: Option<ConfigFile>,
     /// Nearby configurations: more context, the next quant up and down, no offload.
     pub alternatives: Vec<Alternative>,
+    /// Generation speed from memory bandwidth (llama.cpp only, when bandwidth is known).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed: Option<speed::Speed>,
 }
 
 /// A suggested change that would make the model fit.
@@ -625,6 +629,10 @@ fn search_plan(
         argv: Vec::new(),
         config_file: None,
         alternatives: Vec::new(),
+        speed: match req.runtime {
+            Runtime::LlamaCpp => speed::estimate(model, c.placement, &c.cfg, gpu),
+            _ => None,
+        },
     };
     match req.runtime {
         Runtime::Exl3 => {

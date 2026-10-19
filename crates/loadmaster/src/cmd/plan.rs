@@ -158,6 +158,9 @@ struct RepoRow {
     short_by: Option<u64>,
     /// False when sized from the file size, not the file's own header.
     exact: bool,
+    /// Estimated generation tok/s x10 at the first fill (4k or the context).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tok_s_x10: Option<(u32, u32)>,
 }
 
 /// `plan hf://org/repo`: every GGUF quant in the repo against this GPU. One header is
@@ -210,7 +213,7 @@ fn repo_table(
                 let ratio = q.size.saturating_sub(header) as f64 / base_weights;
                 loadmaster_plan::alternatives::requantized(&model, &q.label, ratio)
             };
-            let row = |fit, ctx, kv, gpu_bytes, short_by| RepoRow {
+            let row = |fit, ctx, kv, gpu_bytes, short_by, tok_s_x10| RepoRow {
                 quant: q.label.clone(),
                 file: q.file.clone(),
                 size_bytes: q.size,
@@ -220,6 +223,7 @@ fn repo_table(
                 gpu_bytes,
                 short_by,
                 exact,
+                tok_s_x10,
             };
             Ok(match loadmaster_plan::plan(&m, &snap, &gpu, &req) {
                 Ok(p) => row(
@@ -232,10 +236,19 @@ fn repo_table(
                     Some(p.kv.flag()),
                     p.footprint.gpu_bytes,
                     None,
+                    p.speed
+                        .as_ref()
+                        .and_then(|s| s.at.first())
+                        .map(|a| a.tok_s_x10),
                 ),
-                Err(Error::CannotFit(n)) => {
-                    row("no", n.ctx, None, n.closest.gpu_bytes, Some(n.short_by))
-                }
+                Err(Error::CannotFit(n)) => row(
+                    "no",
+                    n.ctx,
+                    None,
+                    n.closest.gpu_bytes,
+                    Some(n.short_by),
+                    None,
+                ),
                 Err(e) => return Err(e.into()),
             })
         })
@@ -271,13 +284,29 @@ fn repo_table(
             gpu.name,
             gib(gpu.usable_bytes)
         );
+        let speed = rows.iter().any(|r| r.tok_s_x10.is_some());
+        let tok_s = |r: &RepoRow| match (speed, r.tok_s_x10) {
+            (false, _) => String::new(),
+            (true, Some(t)) => format!("  {:>15}", loadmaster_plan::speed::band_text(t)),
+            (true, None) => format!("  {:>15}", "-"),
+        };
         println!(
-            "{:<w$}  {:>10}  {:<fw$}  {:>7}  {:<5} {:>10}",
-            "QUANT", "SIZE", "FIT", "CTX", "KV", "GPU"
+            "{:<w$}  {:>10}  {:<fw$}  {:>7}  {:<5} {:>10}{}",
+            "QUANT",
+            "SIZE",
+            "FIT",
+            "CTX",
+            "KV",
+            "GPU",
+            if speed {
+                format!("  {:>15}", "TOK/S (4k)")
+            } else {
+                String::new()
+            }
         );
         for r in &rows {
             println!(
-                "{:<w$}  {:>10}  {:<fw$}  {:>7}  {:<5} {:>10}{}",
+                "{:<w$}  {:>10}  {:<fw$}  {:>7}  {:<5} {:>10}{}{}",
                 r.quant,
                 gib(r.size_bytes),
                 fit_cell(r),
@@ -288,6 +317,7 @@ fn repo_table(
                 },
                 r.kv.unwrap_or("-"),
                 gib(r.gpu_bytes),
+                tok_s(r),
                 if r.exact { "" } else { "  *" }
             );
         }

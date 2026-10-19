@@ -88,6 +88,9 @@ pub fn summary(p: &Plan) -> String {
         kv_label(p)
     )
     .unwrap();
+    if let Some(s) = &p.speed {
+        writeln!(out, "speed: {} (estimate)", speed_line(s)).unwrap();
+    }
     for w in &p.warnings {
         writeln!(out, "warning: {w}").unwrap();
     }
@@ -95,6 +98,73 @@ pub fn summary(p: &Plan) -> String {
     writeln!(out, "{}", emit::command(p)).unwrap();
     alternatives(&mut out, p);
     out
+}
+
+/// `~95-150 tok/s generating at 4k context, ~70-115 at 32k`.
+fn speed_line(s: &crate::speed::Speed) -> String {
+    let k = |fill: u32| {
+        if fill >= 1024 && fill % 1024 == 0 {
+            format!("{}k", fill / 1024)
+        } else {
+            fill.to_string()
+        }
+    };
+    s.at.iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let b = crate::speed::band_text(a.tok_s_x10);
+            if i == 0 {
+                format!("~{b} generating at {} context", k(a.fill))
+            } else {
+                format!("~{} at {}", b.trim_end_matches(" tok/s"), k(a.fill))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn speed_section(out: &mut String, s: &crate::speed::Speed) {
+    let band = match s.backend {
+        "Metal" => crate::speed::METAL,
+        _ => crate::speed::CUDA,
+    };
+    writeln!(out).unwrap();
+    writeln!(out, "SPEED    generation, memory-bound (estimate)").unwrap();
+    writeln!(
+        out,
+        "  bandwidth          {:.0} GB/s ({})",
+        s.bandwidth_bytes_s as f64 / 1e9,
+        s.bandwidth_basis
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  {:<18} efficiency {:.2}-{:.2}, {:.0}-{:.0} us per layer per token (ADR 0009)",
+        format!("{} fit", band.name),
+        band.eff.0,
+        band.eff.1,
+        band.per_layer_us.0,
+        band.per_layer_us.1
+    )
+    .unwrap();
+    if let Some(h) = &s.host_basis {
+        writeln!(out, "  {:<18} {h}", "CPU-side reads").unwrap();
+    }
+    for a in &s.at {
+        writeln!(
+            out,
+            "  {:<18} read {} from GPU{} per token: {}",
+            format!("at {} tokens", a.fill),
+            gib(a.gpu_bytes),
+            if a.cpu_bytes > 0 {
+                format!(" + {} from RAM", gib(a.cpu_bytes))
+            } else {
+                String::new()
+            },
+            crate::speed::band_text(a.tok_s_x10)
+        )
+        .unwrap();
+    }
 }
 
 /// The alternatives table, under the command.
@@ -110,14 +180,15 @@ fn alternatives(out: &mut String, p: &Plan) {
         } else {
             format!("-{}", gib(a.delta_bytes.unsigned_abs()))
         };
-        let speed = match a.slowdown_x100 {
-            Some((lo, hi)) => format!(
+        let speed = match (a.tok_s_x10, a.slowdown_x100) {
+            (Some(t), _) => format!("~{} (estimate)", crate::speed::band_text(t)),
+            (None, Some((lo, hi))) => format!(
                 "{:.1}-{:.1}x slower (estimate)",
                 f64::from(lo) / 100.0,
                 f64::from(hi) / 100.0
             ),
-            None if a.fits => "full GPU speed".to_owned(),
-            None => String::new(),
+            (None, None) if a.fits => "full GPU speed".to_owned(),
+            (None, None) => String::new(),
         };
         writeln!(
             out,
@@ -203,6 +274,9 @@ pub fn explain(p: &Plan) -> String {
     }
     for w in &p.warnings {
         writeln!(out, "  warning: {w}").unwrap();
+    }
+    if let Some(s) = &p.speed {
+        speed_section(&mut out, s);
     }
     writeln!(out).unwrap();
     writeln!(out, "COMMAND").unwrap();

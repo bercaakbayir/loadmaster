@@ -264,6 +264,7 @@ pub(crate) fn plan(
         argv: Vec::new(),
         config_file: None,
         alternatives: Vec::new(),
+        speed: None,
     };
     plan.argv = emit::vllm::argv(&plan, util_x100);
     Ok(plan)

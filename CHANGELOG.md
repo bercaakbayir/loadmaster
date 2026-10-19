@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
 - Memory bandwidth in the hardware snapshot: from the catalog (20 NVIDIA cards and 15 Apple
   chips, each figure cited in ADR 0009), else NVML's bus width and memory clock; `--pretend
   24GB@936` sets it for raw sizes. `gpu` and `gpu --pretend list` show it.
+- Speed estimates: `plan` prints generation tok/s as a band at 4k and at the planned
+  context, `--explain` has a SPEED section, alternatives and the `hf://` quant table show
+  tok/s. Memory-bound model fitted to 48 published llama.cpp results, all of which a test
+  keeps inside the band (`validation/speed.toml`, ADR 0009). llama.cpp plans only.
 - `plan hf://org/repo/file.gguf` plans a Hub model from its header alone (a few MB, never
   the weights): split GGUFs and a sibling mmproj included, headers cached under
   `~/.loadmaster/hf`, `--offline` for cache only, `HF_TOKEN` for gated repos, `HF_ENDPOINT`

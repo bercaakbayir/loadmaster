@@ -10,6 +10,8 @@ env:
   RUSTFLAGS: -D warnings
   # Snapshot changes must be reviewed locally, never accepted in CI.
   INSTA_UPDATE: "no"
+  # Runners occasionally lose DNS for a minute; retry crates.io downloads for longer.
+  CARGO_NET_RETRY: "10"
 
 jobs:
   check:
@@ -23,6 +25,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # Download dependencies first, retrying across a short network outage, so a DNS
+      # blip shows up as a retry here instead of a failed lint step.
+      - name: Fetch dependencies
+        shell: bash
+        run: for i in 1 2 3; do cargo fetch --locked && exit 0; sleep 30; done; exit 1
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace

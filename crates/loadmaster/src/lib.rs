@@ -66,6 +66,9 @@ enum Command {
     /// Does tool calling and structured output work on this endpoint? Exit 0 pass,
     /// 1 partial, 2 fail.
     Probe(ProbeArgs),
+    /// Run a model once and write what it really used (and how fast it was) next to the
+    /// prediction, as a validation case you can review and share. Nothing is uploaded.
+    Report(ReportArgs),
     /// A fake OpenAI-compatible runtime for tests.
     #[command(name = "__fake-runtime", hide = true)]
     FakeRuntime(cmd::fake::FakeArgs),
@@ -209,6 +212,42 @@ struct UpArgs {
 }
 
 #[derive(Args)]
+struct ReportArgs {
+    /// A .gguf file or a name from `loadmaster scan`.
+    #[arg(required_unless_present = "from_log")]
+    model: Option<String>,
+    /// Context length (default: what `plan` picks).
+    #[arg(long)]
+    ctx: Option<u32>,
+    /// Report from the last load of NAME in `loadmaster up`'s log instead of a new run.
+    #[arg(long, value_name = "NAME", conflicts_with_all = ["model", "ctx"])]
+    from_log: Option<String>,
+    /// The llama-server to run.
+    #[arg(long, default_value = "llama-server")]
+    runtime_bin: String,
+    /// Start without asking.
+    #[arg(long, short)]
+    yes: bool,
+    /// On unified memory (Apple Silicon), also run plans under the free-RAM safety margin.
+    #[arg(long)]
+    unsafe_unified: bool,
+    /// On a dedicated GPU, run every layer on the GPU even when the plan says it won't fit,
+    /// to check that prediction. Refused on unified memory.
+    #[arg(long)]
+    try_anyway: bool,
+    /// Seconds to wait for the model to load.
+    #[arg(long, default_value_t = 600)]
+    timeout: u64,
+    /// Directory for the report file.
+    #[arg(long, default_value = ".")]
+    out: PathBuf,
+    #[command(flatten)]
+    lock: LockArgs,
+    #[command(flatten)]
+    hw: HwArgs,
+}
+
+#[derive(Args)]
 pub(crate) struct HwArgs {
     /// Plan for hardware you don't have: a card (`rtx 4090`), a Mac (`m4 pro 48gb`) or a
     /// size (`24GB`, `48GB-unified`), optionally with host RAM (`rtx 3090+128GB`).
@@ -319,6 +358,19 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             hw,
         }) => cmd::import::llama_swap(&config, &lock.lock, force, &hw),
         Command::Probe(args) => cmd::probe::run(args),
+        Command::Report(r) => cmd::report::run(cmd::report::Args {
+            model: r.model,
+            from_log: r.from_log,
+            ctx: r.ctx,
+            runtime_bin: r.runtime_bin,
+            yes: r.yes,
+            unsafe_unified: r.unsafe_unified,
+            try_anyway: r.try_anyway,
+            timeout_s: r.timeout,
+            out: r.out,
+            lock: r.lock.lock,
+            hw: r.hw,
+        }),
         Command::FakeRuntime(args) => cmd::fake::run(args),
     }
 }

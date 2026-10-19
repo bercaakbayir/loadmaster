@@ -1,0 +1,4 @@
+load_tensors:  MTL0_Mapped model buffer size =  5120.00 MiB
+ggml_metal_buffer_init: error: failed to allocate buffer, size =  2048.00 MiB
+llama_init_from_model: failed to initialize the context: failed to allocate buffer for kv cache
+srv          main: exiting due to model loading error

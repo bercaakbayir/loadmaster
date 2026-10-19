@@ -4,6 +4,7 @@ pub mod import;
 pub mod lock;
 pub mod plan;
 pub mod probe;
+pub mod report;
 pub mod scan;
 pub mod serve;
 pub mod verify;

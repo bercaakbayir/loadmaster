@@ -55,7 +55,7 @@ impl Stores {
 
 /// The model's sha256 when the store already names the file by it, else hashed (unless
 /// `no_hash`, or the model is a directory).
-fn sha256(m: &ModelInfo, no_hash: bool) -> anyhow::Result<Option<String>> {
+pub(crate) fn sha256(m: &ModelInfo, no_hash: bool) -> anyhow::Result<Option<String>> {
     if let Source::Ollama { digest, .. } = &m.source {
         return Ok(digest.strip_prefix("sha256:").map(str::to_owned));
     }

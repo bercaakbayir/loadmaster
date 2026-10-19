@@ -1,0 +1,7 @@
+cmn  common_init_from_params: verbosity = 4 (adjust with the `-lv N` CLI arg)
+load_tensors:        CUDA0 model buffer size = 18234.11 MiB
+ggml_backend_cuda_buffer_type_alloc_buffer: allocating 9216.00 MiB on device 0: cudaMalloc failed: out of memory
+alloc_tensor_range: failed to allocate CUDA0 buffer of size 9663676416
+llama_init_from_model: failed to initialize the context: failed to allocate buffer for kv cache
+srv    load_model: failed to load model, '/models/m.gguf'
+srv          main: exiting due to model loading error

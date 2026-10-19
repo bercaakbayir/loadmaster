@@ -18,6 +18,16 @@ All notable changes to this project are documented here. The format follows
   context, `--explain` has a SPEED section, alternatives and the `hf://` quant table show
   tok/s. Memory-bound model fitted to 48 published llama.cpp results, all of which a test
   keeps inside the band (`validation/speed.toml`, ADR 0009). llama.cpp plans only.
+- `loadmaster report <model>`: runs the planned llama-server command once (after asking),
+  records every buffer it allocated per device, the load result, and generation and prompt
+  speed from one timed request, next to the prediction; writes a TOML report with no paths,
+  hosts or user names, and prints a prefilled GitHub issue link. Nothing is uploaded.
+  `--from-log NAME` reports from a `loadmaster up` log instead. On unified memory it runs
+  only plans that fit within the RAM margin and stops the run if free RAM falls below it;
+  `--try-anyway` checks a "does not fit" prediction on a dedicated GPU.
+- `__fake-runtime` replays llama-server logs (`--log-fixture`), fails loads (`--oom-after`)
+  and serves `/completion` with timings (`--speed`), so all of the above is tested without
+  a model.
 - `plan hf://org/repo/file.gguf` plans a Hub model from its header alone (a few MB, never
   the weights): split GGUFs and a sibling mmproj included, headers cached under
   `~/.loadmaster/hf`, `--offline` for cache only, `HF_TOKEN` for gated repos, `HF_ENDPOINT`

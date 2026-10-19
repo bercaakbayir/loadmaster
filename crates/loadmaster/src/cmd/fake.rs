@@ -12,7 +12,10 @@ use loadmaster_probe::fake::{Config, Impersonate, Misbehavior};
 #[derive(Args)]
 pub struct FakeArgs {
     /// `--port N` (required), `--host H`, `--name ID`, `--misbehave a,b`,
-    /// `--impersonate llama.cpp|vllm|ollama|lmstudio|sglang|tabbyapi`, `--load-delay SECS`.
+    /// `--impersonate llama.cpp|vllm|ollama|lmstudio|sglang|tabbyapi`, `--load-delay SECS`,
+    /// `--log-fixture FILE` (printed to stderr while "loading", like llama-server's log),
+    /// `--oom-after SECS` (print the fixture, then exit 1 as a failed load), `--speed PP,TG`
+    /// (tokens/s in `/completion` timings).
     /// `-m PATH` sets the reported chat template from that model file. Anything else
     /// (runtime flags such as `-c`) is ignored.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -55,6 +58,23 @@ pub fn run(a: FakeArgs) -> anyhow::Result<ExitCode> {
     {
         cfg.chat_template = t.source;
     }
+    if let Some(s) = value("--speed") {
+        let (pp, tg) = s.split_once(',').context("--speed takes PP,TG")?;
+        cfg.speed = (
+            pp.parse().context("--speed")?,
+            tg.parse().context("--speed")?,
+        );
+    }
+    let log = match value("--log-fixture") {
+        Some(p) => std::fs::read_to_string(p).with_context(|| format!("reading {p}"))?,
+        None => String::new(),
+    };
+    if let Some(secs) = value("--oom-after") {
+        let secs: f64 = secs.parse().context("--oom-after")?;
+        eprint!("{log}");
+        std::thread::sleep(std::time::Duration::from_secs_f64(secs));
+        return Ok(ExitCode::from(1));
+    }
     let delay: f64 = value("--load-delay")
         .unwrap_or("0")
         .parse()
@@ -66,7 +86,11 @@ pub fn run(a: FakeArgs) -> anyhow::Result<ExitCode> {
         if delay > 0.0 {
             tokio::time::sleep(std::time::Duration::from_secs_f64(delay)).await;
         }
+        eprint!("{log}");
         let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
+        // llama-server's ready lines (tools/server/server.cpp at llama.cpp f174553).
+        eprintln!("srv          main: model loaded");
+        eprintln!("srv          main: listening on http://{host}:{port}");
         loadmaster_probe::fake::serve(listener, cfg).await
     })?;
     Ok(ExitCode::SUCCESS)

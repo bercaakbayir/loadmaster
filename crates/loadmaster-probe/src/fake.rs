@@ -111,6 +111,8 @@ pub struct Config {
     pub impersonate: Impersonate,
     /// Chat template text served on llama.cpp's `/props`.
     pub chat_template: String,
+    /// Prompt and generation speed (tokens/s) reported in llama.cpp `/completion` timings.
+    pub speed: (f64, f64),
 }
 
 impl Default for Config {
@@ -120,6 +122,7 @@ impl Default for Config {
             misbehave: HashSet::new(),
             impersonate: Impersonate::LlamaCpp,
             chat_template: "{% for m in messages %}{{ m.content }}{% endfor %}".into(),
+            speed: (1000.0, 50.0),
         }
     }
 }
@@ -142,7 +145,9 @@ pub fn router(cfg: Config) -> Router {
         .route("/v1/models", get(models))
         .route("/v1/chat/completions", post(chat));
     r = match state.cfg.impersonate {
-        Impersonate::LlamaCpp => r.route("/props", get(props)),
+        Impersonate::LlamaCpp => r
+            .route("/props", get(props))
+            .route("/completion", post(native_completion)),
         Impersonate::Vllm => r.route(
             "/version",
             get(|| async { axum::Json(json!({ "version": "0.11.0" })) }),
@@ -191,6 +196,36 @@ async fn props(State(f): St) -> Response {
         "chat_template": f.cfg.chat_template,
         "build_info": "b6700-abc1234",
         "model_path": format!("/models/{}.gguf", f.cfg.model),
+    }))
+    .into_response()
+}
+
+/// llama.cpp's native `/completion`: text plus `timings` at the configured speeds. A
+/// string prompt counts one token per whitespace-separated word.
+async fn native_completion(State(f): St, axum::Json(body): axum::Json<Value>) -> Response {
+    let prompt_n = match &body["prompt"] {
+        Value::Array(t) => t.len(),
+        Value::String(s) => s.split_whitespace().count(),
+        _ => 0,
+    } as f64;
+    let predicted_n = body["n_predict"].as_u64().unwrap_or(16) as f64;
+    let (pp, tg) = f.cfg.speed;
+    let (prompt_ms, predicted_ms) = (prompt_n / pp * 1000.0, predicted_n / tg * 1000.0);
+    axum::Json(json!({
+        "content": "fake ".repeat(predicted_n as usize),
+        "tokens_predicted": predicted_n,
+        "tokens_evaluated": prompt_n,
+        "timings": {
+            "cache_n": 0,
+            "prompt_n": prompt_n,
+            "prompt_ms": prompt_ms,
+            "prompt_per_token_ms": if prompt_n > 0.0 { prompt_ms / prompt_n } else { 0.0 },
+            "prompt_per_second": pp,
+            "predicted_n": predicted_n,
+            "predicted_ms": predicted_ms,
+            "predicted_per_token_ms": predicted_ms / predicted_n.max(1.0),
+            "predicted_per_second": tg,
+        }
     }))
     .into_response()
 }

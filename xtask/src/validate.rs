@@ -58,6 +58,8 @@ impl Hw {
                 total_bytes: self.total_mib * MIB,
                 usable_bytes: self.usable_mib * MIB,
                 usable_basis: "validation case".into(),
+                bandwidth_bytes_s: None,
+                bandwidth_basis: String::new(),
             }],
             host: Host {
                 total_bytes: self.total_mib * MIB,

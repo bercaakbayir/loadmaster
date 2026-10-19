@@ -55,6 +55,10 @@ fn apple(host: &Host) -> Option<Gpu> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     let (usable_bytes, usable_basis) = apple_working_set(host.total_bytes, wired);
+    let (bandwidth_bytes_s, bandwidth_basis) = match crate::catalog::bandwidth_for(&name) {
+        Some((b, basis)) => (Some(b), basis),
+        None => (None, String::new()),
+    };
     Some(Gpu {
         index: 0,
         name,
@@ -63,6 +67,8 @@ fn apple(host: &Host) -> Option<Gpu> {
         total_bytes: host.total_bytes,
         usable_bytes,
         usable_basis,
+        bandwidth_bytes_s,
+        bandwidth_basis,
     })
 }
 
@@ -188,6 +194,7 @@ fn host() -> Result<Host, Error> {
 #[cfg(feature = "cuda")]
 fn nvidia() -> Vec<Gpu> {
     use nvml_wrapper::Nvml;
+    use nvml_wrapper::enum_wrappers::device::Clock;
     let nvml = match Nvml::init() {
         Ok(n) => n,
         Err(e) => {
@@ -200,17 +207,39 @@ fn nvidia() -> Vec<Gpu> {
         .filter_map(|i| {
             let dev = nvml.device_by_index(i).ok()?;
             let mem = dev.memory_info().ok()?;
+            let name = dev.name().unwrap_or_else(|_| format!("NVIDIA GPU {i}"));
+            // The catalog's spec-sheet figure, else NVML's bus width x memory clock.
+            let (bandwidth_bytes_s, bandwidth_basis) = match crate::catalog::bandwidth_for(&name) {
+                Some((b, basis)) => (Some(b), basis),
+                None => match (dev.memory_bus_width(), dev.max_clock_info(Clock::Memory)) {
+                    (Ok(bits), Ok(mhz)) if bits > 0 && mhz > 0 => (
+                        Some(nvml_bandwidth(bits, mhz)),
+                        format!("NVML: {bits}-bit bus x {mhz} MHz memory clock x 2"),
+                    ),
+                    _ => (None, String::new()),
+                },
+            };
             Some(Gpu {
                 index: i,
-                name: dev.name().unwrap_or_else(|_| format!("NVIDIA GPU {i}")),
+                name,
                 vendor: Vendor::Nvidia,
                 memory: MemoryKind::Dedicated,
                 total_bytes: mem.total,
                 usable_bytes: mem.free,
                 usable_basis: "NVML free".into(),
+                bandwidth_bytes_s,
+                bandwidth_basis,
             })
         })
         .collect()
+}
+
+/// Peak bandwidth from NVML's bus width (bits) and maximum memory clock (MHz): NVML reports
+/// the memory clock at half the data rate for GDDR and HBM alike, hence x 2 (RTX 4090:
+/// 384-bit x 10501 MHz x 2 = 1008 GB/s, its spec-sheet figure).
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn nvml_bandwidth(bus_bits: u32, mem_mhz: u32) -> u64 {
+    u64::from(bus_bits) / 8 * u64::from(mem_mhz) * 1_000_000 * 2
 }
 
 #[cfg(not(feature = "cuda"))]
@@ -221,6 +250,14 @@ fn nvidia() -> Vec<Gpu> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nvml_bandwidth_matches_spec_sheets() {
+        // RTX 4090: 384-bit, 10501 MHz; RTX 3060: 192-bit, 7501 MHz; A100 40GB: 5120-bit, 1215 MHz.
+        assert_eq!(nvml_bandwidth(384, 10501) / 1_000_000_000, 1008);
+        assert_eq!(nvml_bandwidth(192, 7501) / 1_000_000_000, 360);
+        assert_eq!(nvml_bandwidth(5120, 1215) / 1_000_000_000, 1555);
+    }
 
     #[test]
     fn apple_working_set_matches_metal_defaults() {

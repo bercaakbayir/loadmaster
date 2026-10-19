@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
   catalog (`rtx 4090`, `a6000`), a Mac with its RAM (`m4 pro 48gb`), or a raw size (`24GB`,
   `48GB-unified`), with optional host RAM (`rtx 3090+128GB`). `gpu --pretend list` prints the
   catalog; `up` refuses it.
+- Memory bandwidth in the hardware snapshot: from the catalog (20 NVIDIA cards and 15 Apple
+  chips, each figure cited in ADR 0009), else NVML's bus width and memory clock; `--pretend
+  24GB@936` sets it for raw sizes. `gpu` and `gpu --pretend list` show it.
 - `plan hf://org/repo/file.gguf` plans a Hub model from its header alone (a few MB, never
   the weights): split GGUFs and a sibling mmproj included, headers cached under
   `~/.loadmaster/hf`, `--offline` for cache only, `HF_TOKEN` for gated repos, `HF_ENDPOINT`

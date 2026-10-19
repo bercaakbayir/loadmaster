@@ -31,6 +31,9 @@ pub fn run(json: bool, hw: &crate::HwArgs) -> anyhow::Result<ExitCode> {
             gib(g.usable_bytes),
             g.usable_basis
         );
+        if g.bandwidth_bytes_s.is_some() {
+            println!("       memory bandwidth {}", g.bandwidth_basis);
+        }
     }
     println!(
         "host   {} RAM, {} available",
@@ -43,14 +46,18 @@ pub fn run(json: bool, hw: &crate::HwArgs) -> anyhow::Result<ExitCode> {
 fn print_catalog() {
     println!("--pretend accepts any of these cards (VRAM as nvidia-smi reports it):");
     for c in CARDS {
-        println!("  {:<36} {}", c.name, gib(c.vram_mib << 20));
+        println!(
+            "  {:<36} {:>10}  {:>7} GB/s",
+            c.name,
+            gib(c.vram_mib << 20),
+            c.bandwidth_gbs
+        );
     }
-    let chips: Vec<&str> = CHIPS.iter().map(|(_, name)| *name).collect();
+    println!("a Mac with its RAM, e.g. `m4 pro 48gb`:");
+    for c in CHIPS {
+        println!("  {:<36} {:>10}  {:>7} GB/s", c.name, "", c.bandwidth_gbs);
+    }
     println!(
-        "a Mac with its RAM, e.g. `m4 pro 48gb`: {}",
-        chips.join(", ")
-    );
-    println!(
-        "or a size: `24GB` (dedicated), `48GB-unified` (Apple-like); add `+64GB` for host RAM"
+        "or a size: `24GB` (dedicated), `48GB-unified` (Apple-like), with bandwidth `24GB@936`; add `+64GB` for host RAM"
     );
 }

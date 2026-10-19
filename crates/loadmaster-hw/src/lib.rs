@@ -52,6 +52,12 @@ pub struct Gpu {
     pub usable_bytes: u64,
     /// Where `usable_bytes` came from, for `--explain`.
     pub usable_basis: String,
+    /// Peak memory bandwidth in bytes per second, when known (for speed estimates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth_bytes_s: Option<u64>,
+    /// Where `bandwidth_bytes_s` came from.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bandwidth_basis: String,
 }
 
 impl Gpu {
@@ -139,6 +145,8 @@ impl FakeHw {
                 total_bytes,
                 usable_bytes,
                 usable_basis: "NVML free".into(),
+                bandwidth_bytes_s: None,
+                bandwidth_basis: String::new(),
             }],
             host: Host {
                 total_bytes: host_gib * GIB,
@@ -160,6 +168,8 @@ impl FakeHw {
                 total_bytes: total,
                 usable_bytes: usable,
                 usable_basis: basis,
+                bandwidth_bytes_s: None,
+                bandwidth_basis: String::new(),
             }],
             host: Host {
                 total_bytes: total,
@@ -218,6 +228,16 @@ mod tests {
         let snap = FakeHw::rtx_4090().snapshot().unwrap();
         let json = serde_json::to_string(&snap).unwrap();
         assert_eq!(serde_json::from_str::<HwSnapshot>(&json).unwrap(), snap);
+    }
+
+    #[test]
+    fn snapshots_without_bandwidth_still_parse() {
+        // Written by loadmaster before bandwidth existed.
+        let old = r#"{"gpus":[{"index":0,"name":"X","vendor":"nvidia","memory":"dedicated",
+            "total_bytes":1,"usable_bytes":1,"usable_basis":"b"}],
+            "host":{"total_bytes":1,"available_bytes":1}}"#;
+        let snap: HwSnapshot = serde_json::from_str(old).unwrap();
+        assert_eq!(snap.gpus[0].bandwidth_bytes_s, None);
     }
 
     #[test]

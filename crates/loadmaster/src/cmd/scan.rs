@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use loadmaster_hw::{Gpu, HwSnapshot};
 use loadmaster_model::{Format, ModelInfo, Quant, Source};
-use loadmaster_plan::{Error, KvType, PlanRequest, Runtime, gib};
+use loadmaster_plan::{Error, KvType, PlanRequest, Runtime};
 use serde::Serialize;
 
 const CTXS: [u32; 3] = [8192, 32768, 131072];
@@ -123,7 +123,12 @@ struct JsonOut<'a> {
     issues: &'a [loadmaster_store::Issue],
 }
 
-pub fn run(path: Vec<PathBuf>, json: bool, hw: &crate::HwArgs) -> anyhow::Result<ExitCode> {
+pub fn run(
+    path: Vec<PathBuf>,
+    json: bool,
+    wide: bool,
+    hw: &crate::HwArgs,
+) -> anyhow::Result<ExitCode> {
     let scan = loadmaster_store::scan(&super::roots(path));
     let hw = super::snapshot(hw)?;
     let gpu = hw.best_gpu();
@@ -174,82 +179,116 @@ pub fn run(path: Vec<PathBuf>, json: bool, hw: &crate::HwArgs) -> anyhow::Result
         return Ok(ExitCode::SUCCESS);
     }
 
+    let style = crate::ui::style();
+    let mut out = String::new();
     if rows.is_empty() {
-        println!("no models found (looked in the HF cache, Ollama, LM Studio and --path dirs)");
+        out.push_str(
+            "no models found (looked in the HF cache, Ollama, LM Studio and --path dirs)\n",
+        );
     } else {
         let name_w = rows
             .iter()
-            .map(|r| r.name.len())
+            .map(|r| r.name.chars().count())
             .max()
             .unwrap_or(4)
             .clamp(4, 60);
-        println!(
-            "{:<name_w$}  {:<8} {:<6} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
-            "NAME",
-            "SOURCE",
-            "KIND",
-            "SIZE",
-            "ARCH",
-            "QUANT",
-            "CTX",
-            "MMPROJ",
-            "TEMPLATE",
-            "8k",
-            "32k",
-            "128k"
+        let mut header = format!(
+            "{:<name_w$}  {:<8}  {:<6}  {:>9}  {:<10}",
+            "NAME", "SOURCE", "KIND", "SIZE", "QUANT"
         );
+        if wide {
+            header.push_str(&format!(
+                "  {:<10}  {:>7}  {:<6}  {:<8}",
+                "ARCH", "CTX", "MMPROJ", "TEMPLATE"
+            ));
+        }
+        header.push_str(&format!("  {:<8} {:<8} {}", "8k", "32k", "128k"));
+        out.push_str(style.bold(header.trim_end()).as_str());
+        out.push('\n');
         for r in &rows {
             let fits = r.fits.unwrap_or([Fit::Na; 3]);
             let caveats = r.caveats.unwrap_or([None; 3]);
             let cell = |i: usize| {
                 let c = fits[i].cell();
-                if caveats[i].is_some() {
+                let text = if caveats[i].is_some() {
                     format!("{c}*")
                 } else {
                     c.to_owned()
+                };
+                // The last column is not padded, so lines end without spaces.
+                let padded = if i < 2 { format!("{text:<8}") } else { text };
+                match fits[i] {
+                    Fit::Gpu if caveats[i].is_none() => style.green(&padded),
+                    Fit::Gpu | Fit::Offload => style.yellow(&padded),
+                    Fit::No => style.red(&padded),
+                    Fit::Na => style.dim(&padded),
                 }
             };
-            println!(
-                "{:<name_w$}  {:<8} {:<6} {:>10}  {:<10} {:<12} {:>7}  {:<6} {:<8}  {:<7} {:<7} {:<7}",
+            let mut line = format!(
+                "{:<name_w$}  {:<8}  {:<6}  {:>9}  {:<10}",
                 truncate(r.name, name_w),
                 source_kind(r.source),
                 r.kind.unwrap_or("?"),
-                gib(r.size_bytes),
-                r.arch.unwrap_or("?"),
+                loadmaster_plan::explain::gib1(r.size_bytes),
                 r.quant.as_deref().unwrap_or("?"),
-                r.n_ctx_train.map_or("?".into(), |c| c.to_string()),
-                if r.mmproj.is_some() { "yes" } else { "-" },
-                r.chat_template_blake3.map_or("-", |h| &h[..8]),
-                cell(0),
-                cell(1),
-                cell(2),
             );
+            if wide {
+                line.push_str(&format!(
+                    "  {:<10}  {:>7}  {:<6}  {:<8}",
+                    r.arch.unwrap_or("?"),
+                    r.n_ctx_train.map_or("?".into(), |c| c.to_string()),
+                    if r.mmproj.is_some() { "yes" } else { "-" },
+                    r.chat_template_blake3.map_or("-", |h| &h[..8]),
+                ));
+            }
+            line.push_str(&format!("  {} {} {}", cell(0), cell(1), cell(2)));
+            out.push_str(line.trim_end());
+            out.push('\n');
             if let Some(err) = r.error {
-                println!("{:<name_w$}  error: {err}", "");
+                out.push_str(&format!("{:<name_w$}  error: {err}\n", ""));
             }
         }
+        out.push('\n');
         match gpu {
             Some(g) => {
-                println!(
-                    "\nfits on {}: gpu = entirely on GPU, offload = with CPU offload",
-                    g.name
-                );
-                if rows
+                let tight = rows
                     .iter()
-                    .any(|r| r.caveats.is_some_and(|c| c.iter().any(Option::is_some)))
-                {
-                    println!(
-                        "* only with a q4_0 KV cache (lower quality) or under the {}% free-RAM margin; `loadmaster plan <name> --ctx <n>` says which",
+                    .any(|r| r.caveats.is_some_and(|c| c.iter().any(Option::is_some)));
+                out.push_str(&style.dim(&format!(
+                    "on {}: gpu = fits on GPU · offload = needs CPU",
+                    loadmaster_plan::explain::hw_label(&[g])
+                )));
+                out.push('\n');
+                if tight {
+                    out.push_str(&style.dim(&format!(
+                        "* = only with q4_0 KV or under the {}% free-RAM margin; `loadmaster plan <name> --ctx <n>` says which",
                         loadmaster_plan::UNIFIED_RAM_MARGIN_PCT
-                    );
+                    )));
+                    out.push('\n');
                 }
             }
-            None => println!("\nno GPU detected; fit columns are empty"),
+            None => out.push_str("no GPU detected; fit columns are empty\n"),
         }
     }
-    for i in &scan.issues {
-        println!("warning: {}: {}", i.path.display(), i.problem);
+    if wide {
+        for i in &scan.issues {
+            out.push_str(&format!(
+                "{} {}: {}\n",
+                style.yellow("!"),
+                i.path.display(),
+                i.problem
+            ));
+        }
+    } else if !scan.issues.is_empty() {
+        let n = scan.issues.len();
+        out.push_str(&format!(
+            "{} {n} {} skipped (--wide lists {})\n",
+            style.yellow("!"),
+            if n == 1 { "directory" } else { "directories" },
+            if n == 1 { "it" } else { "them" }
+        ));
     }
+    crate::ui::print(&out);
     Ok(ExitCode::SUCCESS)
 }
 

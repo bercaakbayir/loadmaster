@@ -32,6 +32,10 @@ enum Command {
         path: Vec<PathBuf>,
         #[arg(long)]
         json: bool,
+        /// Also show architecture, training context, vision projector and chat template,
+        /// and list every directory that was skipped.
+        #[arg(long)]
+        wide: bool,
         #[command(flatten)]
         hw: HwArgs,
     },
@@ -369,7 +373,12 @@ fn init_tracing(verbose: u8) {
 
 fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
-        Command::Scan { path, json, hw } => cmd::scan::run(path, json, &hw),
+        Command::Scan {
+            path,
+            json,
+            wide,
+            hw,
+        } => cmd::scan::run(path, json, wide, &hw),
         Command::Gpu { json, hw } => cmd::gpu::run(json, &hw),
         Command::Plan(args) if args.update => cmd::lock::update(args),
         Command::Plan(args) => cmd::plan::run(args),

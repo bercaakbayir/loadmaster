@@ -7,6 +7,7 @@ pub mod probe;
 pub mod report;
 pub mod scan;
 pub mod serve;
+pub mod suggest;
 pub mod verify;
 
 use std::path::Path;

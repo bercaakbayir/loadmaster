@@ -220,6 +220,11 @@ impl Hub {
         }
     }
 
+    /// Whether requests carry a token (gated repos need one).
+    pub fn has_token(&self) -> bool {
+        self.token.is_some()
+    }
+
     fn cache_path(&self, repo: &str, rev: &str, name: &str) -> PathBuf {
         self.cache.join(repo).join(rev).join(name)
     }
@@ -375,13 +380,15 @@ impl Hub {
             url: base.clone(),
             reason: e.to_string(),
         })?;
-        let key: String = url
+        // FNV-1a of the query: a short, stable file name (the query itself is too long).
+        let key = url
             .query()
             .unwrap_or_default()
-            .chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-            .collect();
-        let cached = self.cache.join(".search").join(format!("{key}.json"));
+            .bytes()
+            .fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+            });
+        let cached = self.cache.join(".search").join(format!("{key:016x}.json"));
         let ttl = if self.offline { None } else { Some(SEARCH_TTL) };
         let body = match Self::read_cache(&cached, ttl) {
             Some(b) => b,

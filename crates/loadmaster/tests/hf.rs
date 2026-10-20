@@ -15,6 +15,7 @@ fn workspace() -> PathBuf {
 }
 
 /// A file in a fake repo: the bytes served, and the full size the tree API reports.
+#[derive(Clone)]
 struct File {
     bytes: Vec<u8>,
     size: u64,
@@ -59,6 +60,8 @@ fn hf_file(dir: &str, name: &str) -> File {
 struct Hub {
     repos: HashMap<String, Vec<(String, File)>>,
     private: Vec<String>,
+    /// What `GET /api/models` lists, in the Hub's (trending) order.
+    listing: Vec<serde_json::Value>,
 }
 
 fn hub() -> Hub {
@@ -105,16 +108,99 @@ fn hub() -> Hub {
             .collect(),
     );
     repos.insert(
+        "someone/qwen3-8b-finetune-GGUF".into(),
+        vec![(
+            "Qwen3-8B-Q4_K_M.gguf".into(),
+            gguf("qwen3-8b/Qwen3-8B-Q4_K_M.gguf"),
+        )],
+    );
+    repos.insert(
         "fx/private".into(),
         vec![(
             "Qwen3-8B-Q4_K_M.gguf".into(),
             gguf("qwen3-8b/Qwen3-8B-Q4_K_M.gguf"),
         )],
     );
+    // Listed only, and far too big: suggest must rule it out from its size, never
+    // fetching the (empty, unparseable) header.
+    repos.insert(
+        "fx/huge-GGUF".into(),
+        vec![(
+            "huge-Q4_K_M.gguf".into(),
+            File {
+                bytes: Vec::new(),
+                size: 500 << 30,
+            },
+        )],
+    );
+    // `suggest` lists known publishers only: the same fixtures under their names.
+    for (alias, repo) in [
+        ("ggml-org/qwen3-8b-GGUF", "fx/qwen3-8b-GGUF"),
+        ("google/gemma-3-12b-GGUF", "fx/gemma-3-12b-GGUF"),
+        ("Qwen/huge-GGUF", "fx/huge-GGUF"),
+        ("Qwen/Qwen3-8B-AWQ", "fx/Qwen3-8B-AWQ"),
+    ] {
+        let files = repos[repo].clone();
+        repos.insert(alias.into(), files);
+    }
+    let listing = vec![
+        serde_json::json!({"id": "ggml-org/qwen3-8b-GGUF", "tags": ["gguf", "text-generation"],
+            "baseModels": {"relation": "quantized", "models": [{"id": "fx/Qwen3-8B"}]},
+            "gguf": {"total": 8_190_735_360u64, "architecture": "qwen3"}, "downloads": 900}),
+        serde_json::json!({"id": "unsloth/qwen3-8b-GGUF", "tags": ["gguf", "base_model:quantized:fx/Qwen3-8B"],
+            "downloads": 800}),
+        // A community fine-tune: shown only with --any-publisher.
+        serde_json::json!({"id": "someone/qwen3-8b-finetune-GGUF", "tags": ["gguf", "base_model:finetune:fx/Qwen3-8B-Chat"],
+            "gguf": {"total": 8_190_735_360u64}}),
+        serde_json::json!({"id": "google/gemma-3-12b-GGUF", "tags": ["gguf", "image-text-to-text"],
+            "baseModels": {"relation": "quantized", "models": [{"id": "fx/gemma-3-12b-it"}]},
+            "gguf": {"total": 12_187_000_000u64, "architecture": "gemma3"}}),
+        serde_json::json!({"id": "Qwen/huge-GGUF", "tags": ["gguf"], "gguf": {"total": 1_000_000_000_000u64}}),
+        serde_json::json!({"id": "fx/private", "tags": ["gguf"], "gated": "manual"}),
+        serde_json::json!({"id": "Qwen/Qwen3-8B-AWQ", "tags": ["safetensors", "text-generation"],
+            "safetensors": {"parameters": {"I32": 1_000_000_000u64, "F16": 800_000_000u64}, "total": 1_800_000_000u64}}),
+    ];
     Hub {
         repos,
         private: vec!["fx/private".into()],
+        listing,
     }
+}
+
+/// `GET /api/models?filter=..&search=..`: listing entries carrying every filter tag whose
+/// id contains the search text. Searching `ratelimit` answers 429.
+fn search(hub: &Hub, query: &str) -> (&'static str, Vec<u8>) {
+    let mut filters = Vec::new();
+    let mut text = None;
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        let v = v.replace("%20", " ").replace('+', " ");
+        match k {
+            "filter" => filters.push(v),
+            "search" => text = Some(v.to_lowercase()),
+            _ => {}
+        }
+    }
+    if text.as_deref() == Some("ratelimit") {
+        return ("429 Too Many Requests", Vec::new());
+    }
+    let hits: Vec<&serde_json::Value> = hub
+        .listing
+        .iter()
+        .filter(|m| {
+            let tags: Vec<&str> = m["tags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t.as_str().unwrap())
+                .collect();
+            filters.iter().all(|f| tags.contains(&f.as_str()))
+                && text
+                    .as_deref()
+                    .is_none_or(|t| m["id"].as_str().unwrap().to_lowercase().contains(t))
+        })
+        .collect();
+    ("200 OK", serde_json::to_vec(&hits).unwrap())
 }
 
 fn respond(mut stream: std::net::TcpStream, hub: &Hub) {
@@ -144,6 +230,10 @@ fn respond(mut stream: std::net::TcpStream, hub: &Hub) {
         let _ = stream.write_all(body);
     };
     let path = target.split('?').next().unwrap();
+    if path == "/api/models" {
+        let (status, body) = search(hub, target.split_once('?').map_or("", |(_, q)| q));
+        return send(status, &body);
+    }
     let (repo, rest) = if let Some(p) = path.strip_prefix("/api/models/") {
         let mut it = p.splitn(3, '/');
         let repo = format!("{}/{}", it.next().unwrap(), it.next().unwrap_or(""));
@@ -391,4 +481,102 @@ fn plans_a_safetensors_repo_for_vllm() {
     );
     assert_eq!(o.status.code(), Some(3));
     assert!(text(&o).1.contains("a GGUF repo"), "{}", text(&o).1);
+}
+
+const SUGGEST: [&str; 4] = ["suggest", "--pretend", "rtx 4090", "--ctx"];
+
+fn suggest(url: &str, home: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
+    let args = [&SUGGEST[..], &["8192"], extra].concat();
+    let o = run(url, home, None, &args);
+    let (out, err) = text(&o);
+    (o.status.code(), out, err)
+}
+
+/// The result rows of `suggest`'s table: the lines that name a repo.
+fn table_rows(out: &str) -> Vec<&str> {
+    out.lines()
+        .filter(|l| l.split_whitespace().next().is_some_and(|w| w.contains('/')))
+        .collect()
+}
+
+#[test]
+fn suggest_ranks_what_fits_and_explains_what_it_skipped() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    let (code, out, err) = suggest(&url, home.path(), &[]);
+    assert_eq!(code, Some(0), "{out}{err}");
+    let rows = table_rows(&out);
+    assert_eq!(rows.len(), 2, "{out}");
+    // Biggest first: gemma 12B, then qwen3 8B (the duplicate and the 500 GB repo gone).
+    assert!(
+        rows[0].starts_with("google/gemma-3-12b-GGUF") && rows[0].contains("12.2B"),
+        "{out}"
+    );
+    assert!(
+        rows[1].starts_with("ggml-org/qwen3-8b-GGUF") && rows[1].contains("gpu"),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "searched 6 repos · 1 too large · 1 duplicates · 1 by other publishers (--any-publisher) · 1 gated (set HF_TOKEN)"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "exact plan: loadmaster plan hf://google/gemma-3-12b-GGUF/gemma-3-12b-it-Q4_K_M.gguf"
+        ),
+        "{out}"
+    );
+
+    // Biggest first, and no further once enough fit on the GPU: the 8B is never planned.
+    let (_, one, _) = suggest(&url, home.path(), &["--limit", "1"]);
+    assert_eq!(table_rows(&one).len(), 1, "{one}");
+    assert!(one.contains("1 smaller, not needed"), "{one}");
+
+    // Anyone's repos on request: the fine-tune joins (a different base model, so no dup).
+    let (_, any, _) = suggest(&url, home.path(), &["--any-publisher"]);
+    assert!(any.contains("someone/qwen3-8b-finetune-GGUF"), "{any}");
+
+    // The same answer offline, from the cached search, trees and headers.
+    let (code, offline, err) = suggest("http://127.0.0.1:9", home.path(), &["--offline"]);
+    assert_eq!(code, Some(0), "{offline}{err}");
+    assert_eq!(offline, out);
+}
+
+#[test]
+fn suggest_filters_by_kind_and_runtime() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    let (_, out, _) = suggest(&url, home.path(), &["--kind", "vision"]);
+    let rows = table_rows(&out);
+    assert_eq!(rows.len(), 1, "{out}");
+    assert!(rows[0].starts_with("google/gemma-3-12b-GGUF"), "{out}");
+
+    let (code, out, err) = suggest(&url, home.path(), &["--runtime", "vllm"]);
+    assert_eq!(code, Some(0), "{out}{err}");
+    assert!(out.contains("Qwen/Qwen3-8B-AWQ"), "{out}");
+    assert!(
+        out.contains("exact plan: loadmaster plan hf://Qwen/Qwen3-8B-AWQ --runtime vllm"),
+        "{out}"
+    );
+
+    let (_, json, _) = suggest(&url, home.path(), &["--json"]);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["results"][0]["repo"], "google/gemma-3-12b-GGUF");
+    assert_eq!(v["results"][0]["kind"], "vision");
+    assert_eq!(v["skipped"]["duplicates"], 1);
+    assert_eq!(v["skipped"]["too_large"], 1);
+}
+
+#[test]
+fn suggest_names_the_rate_limit() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    let (code, out, err) = suggest(&url, home.path(), &["ratelimit"]);
+    assert_eq!(code, Some(3), "{out}{err}");
+    assert!(
+        err.contains("rate limit") && err.contains("HF_TOKEN"),
+        "{err}"
+    );
 }

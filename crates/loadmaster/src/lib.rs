@@ -48,6 +48,8 @@ enum Command {
     },
     /// Compute the memory budget and the exact launch command for a model.
     Plan(PlanArgs),
+    /// Search the Hugging Face Hub for models that run on this machine, best fit first.
+    Suggest(SuggestArgs),
     /// Scan, plan the chosen models, and write models.lock.
     Init(InitArgs),
     /// Plan one more model and add it to models.lock.
@@ -316,6 +318,61 @@ struct PlanArgs {
     hw: HwArgs,
 }
 
+#[derive(Args)]
+struct SuggestArgs {
+    /// Search term, matched against repo names (e.g. `qwen`, `gemma 12b`).
+    query: Option<String>,
+    /// `chat` (text generation, vision models included), `vision` or `embed`.
+    #[arg(long, value_enum, default_value_t = SuggestKind::Chat)]
+    kind: SuggestKind,
+    /// llama.cpp searches GGUF repos and compares every quant; vllm searches safetensors.
+    #[arg(long, value_enum, default_value_t = Runtime::LlamaCpp)]
+    runtime: Runtime,
+    /// Context length to plan at. Default: the largest that fits.
+    #[arg(long)]
+    ctx: Option<u32>,
+    /// GPUs to plan on, as for `plan`.
+    #[arg(long, default_value = "auto")]
+    gpu: String,
+    /// Which models the Hub lists first.
+    #[arg(long, value_enum, default_value_t = SuggestSort::Trending)]
+    sort: SuggestSort,
+    /// Rows to show.
+    #[arg(long, default_value_t = 10)]
+    limit: usize,
+    /// Repos to consider from the Hub (each costs a listing and, if it may fit, a header).
+    #[arg(long, default_value_t = 40, value_parser = clap::value_parser!(u32).range(1..=100))]
+    candidates: u32,
+    /// Also list models that do not fit.
+    #[arg(long)]
+    all: bool,
+    /// Include repos by anyone, not just known quantizers (ggml-org, unsloth, bartowski,
+    /// lmstudio-community) and the model's own maker.
+    #[arg(long)]
+    any_publisher: bool,
+    /// Use only cached searches and headers; never touch the network.
+    #[arg(long)]
+    offline: bool,
+    #[arg(long)]
+    json: bool,
+    #[command(flatten)]
+    hw: HwArgs,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SuggestKind {
+    Chat,
+    Vision,
+    Embed,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SuggestSort {
+    Trending,
+    Downloads,
+    New,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Color {
     Auto,
@@ -386,6 +443,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Gpu { json, hw } => cmd::gpu::run(json, &hw),
         Command::Plan(args) if args.update => cmd::lock::update(args),
         Command::Plan(args) => cmd::plan::run(args),
+        Command::Suggest(args) => cmd::suggest::run(args),
         Command::Init(args) => cmd::lock::init(args),
         Command::Add(args) => cmd::lock::add(args),
         Command::Up(args) => cmd::serve::up(args),

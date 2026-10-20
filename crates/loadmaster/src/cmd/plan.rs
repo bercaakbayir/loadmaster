@@ -62,10 +62,10 @@ pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
 
 /// One quant in a Hub repo: its file (first part if split), label and total size.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct RepoQuant {
-    file: String,
-    label: String,
-    size: u64,
+pub(crate) struct RepoQuant {
+    pub(crate) file: String,
+    pub(crate) label: String,
+    pub(crate) size: u64,
 }
 
 /// The quant in a GGUF file name: `Qwen3-30B-A3B-UD-Q4_K_XL-00001-of-00002.gguf` is
@@ -104,7 +104,7 @@ fn quant_label(file: &str) -> String {
 
 /// The GGUF quants in a repo listing, smallest first; split parts are summed into their
 /// first part, projectors and non-GGUF files skipped.
-fn repo_quants(files: &[loadmaster_store::remote::RemoteFile]) -> Vec<RepoQuant> {
+pub(crate) fn repo_quants(files: &[loadmaster_store::remote::RemoteFile]) -> Vec<RepoQuant> {
     let mut quants: Vec<RepoQuant> = Vec::new();
     let projectors = loadmaster_model::mmproj_candidates(files.iter().map(|f| f.path.as_str()));
     for f in files {
@@ -139,39 +139,50 @@ fn repo_quants(files: &[loadmaster_store::remote::RemoteFile]) -> Vec<RepoQuant>
     quants
 }
 
-#[derive(Serialize)]
-struct RepoRow {
-    quant: String,
-    file: String,
-    size_bytes: u64,
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct RepoRow {
+    pub(crate) quant: String,
+    pub(crate) file: String,
+    pub(crate) size_bytes: u64,
     /// `gpu`, `offload` or `no`.
-    fit: &'static str,
-    ctx: u32,
-    kv: Option<&'static str>,
-    gpu_bytes: u64,
+    pub(crate) fit: &'static str,
+    pub(crate) ctx: u32,
+    pub(crate) kv: Option<&'static str>,
+    pub(crate) gpu_bytes: u64,
     /// Bytes over budget when it does not fit.
-    short_by: Option<u64>,
+    pub(crate) short_by: Option<u64>,
     /// False when sized from the file size, not the file's own header.
-    exact: bool,
-    /// Estimated generation tok/s x10 at the first fill (4k or the context).
+    pub(crate) exact: bool,
+    /// Estimated generation tok/s x10 at the planned context.
     #[serde(skip_serializing_if = "Option::is_none")]
-    tok_s_x10: Option<(u32, u32)>,
+    pub(crate) tok_s_x10: Option<(u32, u32)>,
 }
 
-/// `plan hf://org/repo`: every GGUF quant in the repo against this GPU. One header is
-/// fetched and planned exactly; the other quants are that model scaled to their file size.
-fn repo_table(
-    args: &PlanArgs,
+/// Every GGUF quant of a Hub repo planned on this hardware: the base quant (Q4_K_M, else
+/// the median) from its own header, the others from it scaled to their file size.
+pub(crate) struct RepoPlan {
+    pub(crate) model: loadmaster_model::ModelInfo,
+    pub(crate) base: RepoQuant,
+    pub(crate) rows: Vec<RepoRow>,
+}
+
+/// The largest quant that runs entirely on the GPU, else the smallest that runs at all.
+pub(crate) fn best_fit(rows: &[RepoRow]) -> Option<usize> {
+    rows.iter()
+        .rposition(|r| r.fit == "gpu")
+        .or_else(|| rows.iter().position(|r| r.fit != "no"))
+}
+
+/// Plan every quant in `files` (one header fetch). Shared by `plan hf://org/repo` and
+/// `suggest`.
+pub(crate) fn plan_repo_quants(
+    hub: &loadmaster_store::remote::Hub,
     spec: &loadmaster_store::remote::Spec,
     files: &[loadmaster_store::remote::RemoteFile],
-) -> anyhow::Result<ExitCode> {
-    if args.runtime != crate::Runtime::LlamaCpp {
-        anyhow::bail!(
-            "hf://{}: a GGUF repo; plan it with --runtime llama.cpp, or pass a safetensors repo for {}",
-            spec.repo,
-            loadmaster_plan::Runtime::from(args.runtime).name()
-        );
-    }
+    snap: &loadmaster_hw::HwSnapshot,
+    gpu: &loadmaster_hw::Gpu,
+    req: &PlanRequest,
+) -> anyhow::Result<RepoPlan> {
     let quants = repo_quants(files);
     if quants.is_empty() {
         anyhow::bail!(
@@ -182,19 +193,9 @@ fn repo_table(
     let base = quants
         .iter()
         .find(|q| q.label.eq_ignore_ascii_case("Q4_K_M"))
-        .unwrap_or(&quants[quants.len() / 2]);
-    let hub = super::hub(args.offline);
+        .unwrap_or(&quants[quants.len() / 2])
+        .clone();
     let model = hub.open_gguf(&spec.repo, &spec.rev, &base.file, files)?;
-    let snap = super::snapshot(&args.hw)?;
-    let (gpu, extra_gpus) = super::pick_gpus(&snap, &args.gpu)?;
-    let hw = explain::hw_label(&std::iter::once(&gpu).chain(&extra_gpus).collect::<Vec<_>>());
-    let usable: u64 = gpu.usable_bytes + extra_gpus.iter().map(|g| g.usable_bytes).sum::<u64>();
-    let req = PlanRequest {
-        ctx: args.ctx,
-        runtime: args.runtime.into(),
-        extra_gpus,
-        ..PlanRequest::default()
-    };
     // Header bytes are in the file size but not in the weights.
     let header = files
         .iter()
@@ -223,7 +224,7 @@ fn repo_table(
                 exact,
                 tok_s_x10,
             };
-            Ok(match loadmaster_plan::plan(&m, &snap, &gpu, &req) {
+            Ok(match loadmaster_plan::plan(&m, snap, gpu, req) {
                 Ok(p) => row(
                     if p.placement.is_full(m.n_layer) {
                         "gpu"
@@ -251,6 +252,36 @@ fn repo_table(
             })
         })
         .collect::<anyhow::Result<_>>()?;
+    Ok(RepoPlan { model, base, rows })
+}
+
+/// `plan hf://org/repo`: every GGUF quant in the repo against this GPU. One header is
+/// fetched and planned exactly; the other quants are that model scaled to their file size.
+fn repo_table(
+    args: &PlanArgs,
+    spec: &loadmaster_store::remote::Spec,
+    files: &[loadmaster_store::remote::RemoteFile],
+) -> anyhow::Result<ExitCode> {
+    if args.runtime != crate::Runtime::LlamaCpp {
+        anyhow::bail!(
+            "hf://{}: a GGUF repo; plan it with --runtime llama.cpp, or pass a safetensors repo for {}",
+            spec.repo,
+            loadmaster_plan::Runtime::from(args.runtime).name()
+        );
+    }
+    let snap = super::snapshot(&args.hw)?;
+    let (gpu, extra_gpus) = super::pick_gpus(&snap, &args.gpu)?;
+    let hw = explain::hw_label(&std::iter::once(&gpu).chain(&extra_gpus).collect::<Vec<_>>());
+    let usable: u64 = gpu.usable_bytes + extra_gpus.iter().map(|g| g.usable_bytes).sum::<u64>();
+    let req = PlanRequest {
+        ctx: args.ctx,
+        runtime: args.runtime.into(),
+        mmproj_offload: !args.no_mmproj_offload,
+        extra_gpus,
+        ..PlanRequest::default()
+    };
+    let RepoPlan { model, base, rows } =
+        plan_repo_quants(&super::hub(args.offline), spec, files, &snap, &gpu, &req)?;
     let any_fit = rows.iter().any(|r| r.fit != "no");
     if args.json {
         println!(
@@ -265,11 +296,7 @@ fn repo_table(
         );
     } else {
         let style = crate::ui::style();
-        // The largest quant that runs entirely on the GPU, else the smallest that runs.
-        let pick = rows
-            .iter()
-            .rposition(|r| r.fit == "gpu")
-            .or_else(|| rows.iter().position(|r| r.fit != "no"));
+        let pick = best_fit(&rows);
         let fit_cell = |r: &RepoRow| {
             let est = if r.exact { "" } else { "~" };
             match r.short_by {

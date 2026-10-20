@@ -110,6 +110,17 @@ pub fn slowdown_x100(model: &ModelInfo, p: Placement, gpu: &Gpu) -> Option<(u32,
 fn placement_text(p: &Plan) -> String {
     let n = p.model.n_layer;
     let pl = p.placement;
+    let encoder = matches!(
+        p.model.kind,
+        loadmaster_model::ModelKind::Embedding { encoder: true, .. }
+    );
+    if encoder {
+        return if pl.is_full(n) {
+            "all on GPU".to_owned()
+        } else {
+            format!("{} of {n} on GPU", pl.gpu_layer_count(n))
+        };
+    }
     if pl.is_full(n) {
         format!("all on GPU, {} KV", p.kv.flag())
     } else if pl.gpu_layer_count(n) == n {

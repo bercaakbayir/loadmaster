@@ -196,6 +196,13 @@ pub fn summary(p: &Plan, style: Style) -> String {
             style.yellow(&format!("! Fits on {hw}, tight on RAM"))
         )
         .unwrap();
+    } else if !p.placement.is_full(p.model.n_layer) {
+        writeln!(
+            out,
+            "{}",
+            style.yellow(&format!("✓ Fits on {hw} with CPU offload"))
+        )
+        .unwrap();
     } else {
         writeln!(out, "{}", style.green(&format!("✓ Fits on {hw}"))).unwrap();
     }
@@ -390,7 +397,9 @@ fn alternatives(out: &mut String, p: &Plan, style: Style, full: bool) {
             gib_f(a.gpu_bytes)
         )
     };
+    let embedding = matches!(p.model.kind, loadmaster_model::ModelKind::Embedding { .. });
     let speed = |a: &crate::Alternative| match (a.tok_s_x10, a.slowdown_x100) {
+        _ if embedding => String::new(),
         (Some(t), _) => format!("~{}", crate::speed::band_text(t)),
         (None, Some((lo, hi))) => format!(
             "{:.1}-{:.1}x slower",

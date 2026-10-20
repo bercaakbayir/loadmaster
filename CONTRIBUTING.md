@@ -12,8 +12,9 @@ loadmaster report path/to/model.gguf --ctx 32768
 It shows the exact `llama-server` command and asks before starting it, loads the model once,
 times one short request, stops the server, and writes `loadmaster-report-*.toml`: what was
 predicted next to what llama.cpp actually allocated and how fast it ran. The file has no
-paths, hostnames or user names; read it, then open the printed link to submit it as a GitHub
-issue. loadmaster never uploads anything itself.
+paths, hostnames or user names. The terminal shows the prediction next to the result; open
+the printed link to read the whole file on a prefilled GitHub issue and submit it
+(`--show` prints it in the terminal too). loadmaster never uploads anything itself.
 
 Most useful: models near the limit of your GPU (the largest context that loads, and the next
 one up), MoE models, vision models, and any GPU or Mac not yet in

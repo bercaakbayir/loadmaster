@@ -34,6 +34,7 @@ pub struct Args {
     pub try_anyway: bool,
     pub timeout_s: u64,
     pub out: PathBuf,
+    pub show: bool,
     pub lock: PathBuf,
     pub hw: crate::HwArgs,
 }
@@ -498,27 +499,106 @@ fn model_part(m: &ModelInfo) -> anyhow::Result<ModelPart> {
     })
 }
 
-/// Write the report, print it and the submit link.
-fn finish(report: &Report, out_dir: &Path, title: &str) -> anyhow::Result<ExitCode> {
+/// Write the report, print a predicted-vs-observed summary (the whole file with `--show`)
+/// and the submit link. The issue page shows the full file before anything is sent.
+fn finish(report: &Report, out_dir: &Path, title: &str, show: bool) -> anyhow::Result<ExitCode> {
     let text = format!(
         "# loadmaster report: review before sharing. It names no paths, hosts or users.\n{}",
         toml::to_string(report)?
     );
     let file = out_dir.join(format!("loadmaster-report-{}.toml", slug(title)));
     std::fs::write(&file, &text).with_context(|| format!("writing {}", file.display()))?;
-    println!("{text}");
-    println!("wrote {}", file.display());
+    let style = crate::ui::style();
+    let mut out = String::new();
+    if show {
+        out.push_str(&text);
+        out.push('\n');
+    }
+    out.push_str(&summary(report, style));
+    out.push_str(&format!(
+        "\nwrote {} {}\n",
+        file.display(),
+        style.dim("(no paths, hosts or users; --show prints it)")
+    ));
     let (url, prefilled) = issue_url(title, &text);
     if prefilled {
-        println!(
-            "to share it, open this link, review the prefilled issue and submit (loadmaster sends nothing):\n  {url}"
-        );
+        out.push_str("review and submit it here (loadmaster sends nothing):\n");
     } else {
-        println!(
-            "to share it, open this link and paste the file's contents (too long to prefill; loadmaster sends nothing):\n  {url}"
+        out.push_str(
+            "open this link and paste the file (too long to prefill; loadmaster sends nothing):\n",
         );
     }
+    out.push_str(&format!("  {url}\n"));
+    crate::ui::print(&out);
     Ok(ExitCode::SUCCESS)
+}
+
+/// `✓ Prediction held` and a predicted / observed table.
+fn summary(r: &Report, style: crate::ui::Style) -> String {
+    let (p, o) = (&r.prediction, &r.observed);
+    let gpu = r
+        .hardware
+        .gpu
+        .trim_start_matches("NVIDIA GeForce ")
+        .trim_start_matches("NVIDIA ");
+    let verdict = match (p.result, o.result) {
+        ("fits", "fits") => style.green(&format!("✓ Prediction held: fits on {gpu}")),
+        ("cannot_fit", "oom") => style.green(&format!("✓ Prediction held: does not fit on {gpu}")),
+        (_, "fits" | "oom") => style.red(&format!(
+            "✗ Prediction was wrong: predicted {}, observed {}",
+            p.result.replace('_', " "),
+            o.result
+        )),
+        (_, other) => style.yellow(&format!("! No verdict: the run ended with `{other}`")),
+    };
+    let gib = |mib: f64| format!("{:.1} GiB", mib / 1024.0);
+    let predicted_buffers = match (p.gpu_weights_mib, p.gpu_kv_mib, p.gpu_compute_mib) {
+        (Some(w), Some(k), Some(c)) => gib(w + k + c),
+        _ => "-".into(),
+    };
+    let on_gpu: Vec<&DeviceBuffers> = o
+        .buffers
+        .iter()
+        .filter(|b| !b.device.starts_with("CPU") && !b.device.ends_with("_Host"))
+        .collect();
+    let observed_buffers = if on_gpu.is_empty() {
+        "-".into()
+    } else {
+        gib(on_gpu
+            .iter()
+            .map(|b| b.model + b.kv + b.compute + b.output)
+            .sum())
+    };
+    let rows = [
+        ("GPU buffers", predicted_buffers, observed_buffers),
+        (
+            "speed",
+            p.tok_s
+                .map_or("-".into(), |[lo, hi]| format!("{lo:.0}-{hi:.0} tok/s")),
+            o.speed
+                .as_ref()
+                .map_or("-".into(), |s| format!("{:.1} tok/s", s.tg_tok_s)),
+        ),
+        (
+            "load time",
+            "-".into(),
+            o.load_seconds.map_or("-".into(), |t| format!("{t:.1} s")),
+        ),
+    ];
+    // Pad by the visible width, then style the words.
+    let mut out = format!(
+        "{verdict}\n  {:<12} {:>14}  {:>12}\n",
+        "", "predicted", "observed"
+    )
+    .replace("predicted", &style.dim("predicted"))
+    .replace("observed", &style.dim("observed"));
+    for (label, pred, obs) in rows {
+        out.push_str(&format!("  {label:<12} {pred:>14}  {obs:>12}\n"));
+    }
+    if let Some(reason) = &o.reason {
+        out.push_str(&format!("  {}\n", style.dim(reason)));
+    }
+    out
 }
 
 pub fn run(a: Args) -> anyhow::Result<ExitCode> {
@@ -565,9 +645,9 @@ pub fn run(a: Args) -> anyhow::Result<ExitCode> {
                 bail!(why);
             }
             println!(
-                "plan: fits, {} predicted on {}",
-                loadmaster_plan::gib(p.footprint.gpu_bytes),
-                gpu.name
+                "plan: fits on {}, {} predicted",
+                loadmaster_plan::explain::hw_label(&[&gpu]),
+                loadmaster_plan::explain::gib1(p.footprint.gpu_bytes)
             );
             p.argv.clone()
         }
@@ -618,7 +698,14 @@ pub fn run(a: Args) -> anyhow::Result<ExitCode> {
         .file_name()
         .map_or("llama-server".into(), |n| n.to_string_lossy().into_owned());
     let shown = redact(&loadmaster_plan::emit::shell_join(&public), &model);
-    println!("will run: {}", loadmaster_plan::emit::shell_join(&argv));
+    if crate::ui::style().wrap {
+        println!(
+            "will run:\n  {}",
+            loadmaster_plan::emit::shell_wrap(&argv, 88).join("\n  ")
+        );
+    } else {
+        println!("will run: {}", loadmaster_plan::emit::shell_join(&argv));
+    }
     println!("(stops after one {GEN_TOKENS}-token request; the log is kept for you)");
     if !a.yes && !confirm("continue?")? {
         println!("not started");
@@ -633,19 +720,6 @@ pub fn run(a: Args) -> anyhow::Result<ExitCode> {
     let log_path = dir.join(format!("{stamp}-{}.log", slug(&model.quant.to_string())));
     let run = run_once(&argv, &log_path, Duration::from_secs(a.timeout_s), watch)?;
     eprintln!("runtime log: {}", log_path.display());
-    match &run.speed {
-        Some(s) => println!(
-            "result: {} · generation {:.1} tok/s, prompt {:.0} tok/s",
-            run.observed, s.tg_tok_s, s.pp_tok_s
-        ),
-        None => println!(
-            "result: {}{}",
-            run.observed,
-            run.reason
-                .as_deref()
-                .map_or(String::new(), |r| format!(" ({})", redact(r, &model)))
-        ),
-    }
     let build = run.log.build.clone();
     let mut observed = observed_part(run);
     observed.reason = observed.reason.map(|r| redact(&r, &model));
@@ -678,7 +752,7 @@ pub fn run(a: Args) -> anyhow::Result<ExitCode> {
         prediction,
         observed,
     };
-    finish(&report, &a.out, &title)
+    finish(&report, &a.out, &title, a.show)
 }
 
 /// `--from-log NAME`: the last start of NAME in `loadmaster up`'s log, against its
@@ -755,7 +829,7 @@ fn from_log(a: &Args, name: &str) -> anyhow::Result<ExitCode> {
         prediction,
         observed: observed_part(run),
     };
-    finish(&report, &a.out, &title)
+    finish(&report, &a.out, &title, a.show)
 }
 
 #[cfg(test)]

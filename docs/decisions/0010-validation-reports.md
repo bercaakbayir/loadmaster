@@ -25,6 +25,11 @@ contributing one needs no account setup beyond a browser.
 - **Nothing is uploaded.** The report is a local file; a prefilled GitHub issue link
   (`?template=validation.yml&report=...`, under 7,500 characters, else "paste the file")
   lets the user review and submit it themselves. No token, no endpoint to run.
+- **What the terminal shows** (amended 2026-10-20): a verdict (`✓ Prediction held`, `✗
+  Prediction was wrong`) and a predicted / observed table of GPU buffers, speed and load
+  time, then the file name and the link. The whole file was printed at first; it is about 50
+  lines and buried the result. It is now printed only with `--show`; the privacy review
+  still happens, because the issue page shows the whole file before it is submitted.
 - **Privacy by construction.** Model paths become `<model>`/`<mmproj>`, any other absolute
   path `<path>`, the runtime is named by file name only; the model is identified by sha256
   (reusing the HF or Ollama blob name when it already is one) and its store source.

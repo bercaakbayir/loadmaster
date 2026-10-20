@@ -253,6 +253,10 @@ struct ReportArgs {
     /// Directory for the report file.
     #[arg(long, default_value = ".")]
     out: PathBuf,
+    /// Also print the whole report file (it is always written, and shown in full on the
+    /// GitHub issue page before you submit).
+    #[arg(long)]
+    show: bool,
     #[command(flatten)]
     lock: LockArgs,
     #[command(flatten)]
@@ -405,6 +409,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             try_anyway: r.try_anyway,
             timeout_s: r.timeout,
             out: r.out,
+            show: r.show,
             lock: r.lock.lock,
             hw: r.hw,
         }),

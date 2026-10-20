@@ -119,6 +119,15 @@ fn a_run_that_fits_becomes_a_shareable_report() {
     assert_eq!(gpu["model"].as_float(), Some(4455.35));
     assert_eq!(v["model"]["sha256"].as_str().map(str::len), Some(64));
     assert_eq!(v["report"]["mode"].as_str(), Some("run"));
+    // The terminal shows the verdict and the table, not the file (that needs --show).
+    assert!(
+        stdout.contains("✓ Prediction held: fits on RTX 4090"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("41.2 tok/s") && !stdout.contains("[observed]"),
+        "{stdout}"
+    );
     // Privacy: no directory of this machine appears anywhere.
     for p in [
         home.path().display().to_string(),

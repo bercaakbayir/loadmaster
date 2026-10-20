@@ -26,7 +26,7 @@ exact plan: loadmaster plan hf://unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD
 |---|---|
 | The best models for this machine | `lm suggest` |
 | A family or size | `lm suggest qwen`, `lm suggest 3b`, `lm suggest "gemma 12b"` |
-| Vision or embedding models | `lm suggest --kind vision`, `lm suggest --kind embed` |
+| Vision, speech-input or embedding models | `lm suggest --kind vision`, `--kind audio`, `--kind embed` |
 | vLLM instead of llama.cpp | `lm suggest --runtime vllm` |
 | A GPU you don't have | `lm suggest --pretend "2x rtx 3090"` |
 | The classics rather than this week's | `lm suggest --sort downloads` |
@@ -69,8 +69,13 @@ exact plan: loadmaster plan hf://unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD
 
 - **PARAMS is the Hub's count.** For packed formats (NVFP4, some AWQ) it counts packed
   values, so a 35B model can show as 18B; ranking uses the same number.
-- **Unreadable repos** are counted, not shown: image and speech models in GGUF, and files
-  using ggml types loadmaster does not know yet (some new NVIDIA formats).
+- **Unreadable repos** are counted, not shown: image generation and speech-to-text models
+  in GGUF (Whisper, Parakeet), and files using ggml types loadmaster does not know yet (some
+  new NVIDIA formats).
+- **`--kind audio`** searches the Hub's `audio-text-to-text`, `any-to-any` and
+  `automatic-speech-recognition` lists, and keeps models whose projector has an audio
+  encoder. Models with vision and audio (Gemma 4, Qwen2.5-Omni) match `--kind vision` too.
+  llama.cpp only.
 - **Small machines:** trending candidates are often too large; when few fit, `suggest` says
   so. A search term (`lm suggest 1b`) or `--candidates 100` looks further.
 - exl3 is not searched yet.

@@ -84,7 +84,7 @@ unsloth/Qwen3.8-27B-GGUF                      27.3B  UD-Q5_K_XL   19.4 GiB  ~gpu
 exact plan: loadmaster plan hf://unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf
 ```
 
-`lm suggest qwen`, `--kind vision|embed`, `--runtime vllm` and `--sort downloads` narrow it.
+`lm suggest qwen`, `--kind vision|audio|embed`, `--runtime vllm` and `--sort downloads` narrow it.
 
 **Find what you already have.** `scan` reads the HF cache, Ollama and LM Studio:
 
@@ -135,7 +135,7 @@ Run:
 ```
 
 **Vision models.** The projector (`mmproj`) is found next to the model and counted, image
-tokens and encoder included ([docs/vision-embeddings.md](docs/vision-embeddings.md)):
+tokens and encoder included ([docs/multimodal.md](docs/multimodal.md)):
 
 ```console
 $ lm plan hf://ggml-org/gemma-3-4b-it-GGUF/gemma-3-4b-it-Q4_K_M.gguf --pretend "rtx 3060" --ctx 16384
@@ -237,7 +237,7 @@ same way tomorrow.
 | `loadmaster gpu [--json] [--pretend HW\|list]` | GPUs and usable memory (NVML, Apple unified memory), or a pretend one |
 | `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain\|--json\|--command]` | Memory budget, the exact launch command, alternatives |
 | `loadmaster plan hf://org/repo[/file.gguf] [--offline]` | The same from Hub headers only; a bare GGUF repo compares every quant |
-| `loadmaster suggest [QUERY] [--kind chat\|vision\|embed] [--runtime vllm]` | Hub models that run on this machine, best fit first |
+| `loadmaster suggest [QUERY] [--kind chat\|vision\|audio\|embed] [--runtime vllm]` | Hub models that run on this machine, best fit first |
 | `loadmaster init <names…\|--all>` / `add <model>` | Write `models.lock` with frozen flags and footprints |
 | `loadmaster plan <name> --update` | Re-plan one lockfile entry and show the diff |
 | `loadmaster up [--verify]` / `down` / `swap <name>` / `status` | Serve every model on one OpenAI-compatible port, evicting by footprint |
@@ -316,7 +316,7 @@ cargo xtask fetch-headers && cargo xtask validate
 [finding models](docs/suggest.md) ·
 [speed estimates](docs/speed.md) ·
 [several GPUs](docs/multi-gpu.md) ·
-[vision and embedding models](docs/vision-embeddings.md) ·
+[vision, audio and embedding models](docs/multimodal.md) ·
 [models.lock reference](docs/lockfile.md) ·
 [probe fixtures and failure classes](docs/fixtures.md) ·
 [validation](docs/validation.md) ·

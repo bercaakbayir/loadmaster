@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased] (0.3.0 scope; not tagged)
 
 ### Added (planning without the hardware)
+- Audio input: projectors with an audio encoder (Ultravox, Voxtral, Qwen2-Audio,
+  Qwen2.5-Omni, Gemma 4) are sized per 30 s clip with llama.cpp's own rules, with an `audio
+  compute` term (estimate, unvalidated). Files with both encoders count both. Qwen2.5-Omni's
+  vision encoder is now recognised. `suggest --kind audio` finds speech-input models;
+  `--kind vision` also matches models with both. Whisper-style speech-to-text is not planned
+  (ADR 0015, `docs/multimodal.md`). JSON: the projector's per-encoder fields move under
+  `mmproj.vision` / `mmproj.audio`, and its `--explain` label is `projector`.
 - `--pretend <hw>` on `plan`, `scan`, `gpu`, `init`, `add`: plan for a card from a built-in
   catalog (`rtx 4090`, `a6000`), a Mac with its RAM (`m4 pro 48gb`), or a raw size (`24GB`,
   `48GB-unified`), with optional host RAM (`rtx 3090+128GB`). `gpu --pretend list` prints the
@@ -80,7 +87,7 @@ All notable changes to this project are documented here. The format follows
   has them as `caveats`.
 - Plans for BERT-style embedding encoders say `no KV` and no longer mention an output head.
 - README: an example for every feature; new pages `docs/speed.md`, `docs/multi-gpu.md` and
-  `docs/vision-embeddings.md`.
+  `docs/vision-embeddings.md` (now `docs/multimodal.md`).
 - Readable output (ADR 0013): `plan` leads with a verdict (`✓ Fits on 2× RTX 3090`,
   `✗ Doesn't fit: …`) and lists one fact per line; warnings are one line each, with the
   detail in `--explain`; the command wraps on a terminal and stays on one line when piped;

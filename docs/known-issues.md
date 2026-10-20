@@ -20,20 +20,24 @@ signature it shows should get an entry here (spec §9, v0.3.0).
 
 Run `loadmaster report` on your hardware to add a measured point (ADR 0009).
 
-## Vision models (loadmaster's own)
+## Vision and audio models (loadmaster's own)
 
-- The vision encoder's compute buffer is an estimate with no observed run behind it.
+- The vision and audio encoders' compute buffers are estimates with no observed run behind
+  them.
+- `loadmaster report` does not yet tell the audio encoder's buffers apart from the vision
+  encoder's.
+- Speech-to-text models (Whisper, Parakeet) and vLLM audio models are not planned.
 - Dynamic-resolution projectors (Qwen-VL, Pixtral) are planned at llama.cpp's default
   maximum image size; Llama 4 tiling is not modelled.
 
-`loadmaster report` on a vision model records the real buffers.
+`loadmaster report` on a vision or audio model records the real buffers.
 
 ## Model search (loadmaster's own)
 
 - `suggest` shows the Hub's parameter count, which for packed formats (NVFP4, some AWQ)
   counts packed values: a 35B model can show as 18B and rank lower than it should.
 - GGUFs using ggml types newer than loadmaster's table (seen: 40 and 42 in NVIDIA Nemotron
-  3.5 builds) are counted as unreadable, as are image and speech models.
+  3.5 builds) are counted as unreadable, as are image generation and speech-to-text models.
 - A first run downloads tens of MB of headers; see [docs/suggest.md](suggest.md).
 
 ## Multi-GPU (loadmaster's own)

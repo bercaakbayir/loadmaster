@@ -1,4 +1,4 @@
-# Vision and embedding models
+# Vision, audio and embedding models
 
 ## Vision models
 
@@ -62,6 +62,62 @@ Run:
 
 Plans that offload layers or fall short suggest this themselves.
 
+## Audio input
+
+Speech-input models in llama.cpp (Ultravox, Voxtral, Qwen2-Audio, Qwen2.5-Omni, Gemma 4) use
+the same `mmproj` file as vision models. loadmaster reads which encoders the file holds and
+sizes each one with llama.cpp's own rules:
+
+```console
+$ lm plan hf://ggml-org/ultravox-v0_5-llama-3_2-1b-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf --pretend "rtx 3060" --ctx 8192
+Llama 3.2 1B Instruct  ·  Q8_0  ·  16 layers  ·  ctx 8192
+
+✓ Fits on RTX 3060 12GB (pretend)
+  memory     3.8 of 11.5 GiB
+  layers     all 16 on GPU
+  KV cache   f16
+  projector  1.4 GiB on GPU, one 30 s clip
+  speed      ~157-199 tok/s at 8k context (estimate)
+
+Run:
+  llama-server --hf-repo ggml-org/ultravox-v0_5-llama-3_2-1b-GGUF \
+    --hf-file Llama-3.2-1B-Instruct-Q8_0.gguf \
+    --mmproj-url https://huggingface.co/ggml-org/ultravox-v0_5-llama-3_2-1b-GGUF/resolve/main/mmproj-ultravox-v0_5-llama-3_2-1b-f16.gguf \
+    -c 8192 -ngl 17 -fa on -np 1 --jinja
+```
+
+`--explain` shows the audio terms:
+
+```
+  projector            1.28 GiB   1.28 GiB weights + one 30 s clip: 187 tokens (3000 mel frames / stack 8 / 2, ultravox projector) x n_embd 2048 x 2 B
+  audio compute        0.13 GiB   estimate, unvalidated: 16 MiB + mask 2 B x 1500^2 frames + …
+```
+
+- **Audio is planned per 30 s clip.** llama.cpp splits longer audio into 30 s chunks
+  (3000 mel frames), so each further 30 s adds the same number of tokens to the context:
+
+  | Projector | Tokens per 30 s |
+  |---|---|
+  | Ultravox, Voxtral | 187 |
+  | Qwen2-Audio, Qwen2.5-Omni, Music Flamingo | 750 |
+  | Gemma 4 | 750 |
+  | Qwen3 audio | 390 |
+  | LFM2 audio | 375 |
+
+  An unknown audio projector is planned as 1500 tokens per clip and named in the output.
+- **Vision and audio in one file** (Qwen2.5-Omni, Gemma 4): both encoders are counted,
+  since llama.cpp reserves working memory for each. The plan says `one image or 30 s clip`.
+- **Audio compute** is the encoder's working memory. Like vision compute, it is an estimate
+  that no real run has checked yet.
+- `--no-mmproj-offload` keeps both encoders on the CPU.
+- `lm suggest --kind audio` finds speech-input models on the Hub ([suggest](suggest.md)).
+
+### Not covered
+
+Speech-to-text models such as Whisper and Parakeet run in their own runtimes
+(whisper.cpp, NeMo), not llama.cpp, so loadmaster doesn't plan them. vLLM audio models
+aren't planned yet either.
+
 ## Embedding models
 
 `lm scan` labels them `embed`. `lm plan` gives them the embedding flags in place of chat ones:
@@ -109,4 +165,5 @@ This checks `/v1/embeddings`:
 
 `lm up --verify` runs these checks for embedding models in the lockfile.
 
-Design and llama.cpp sources: [ADR 0011](decisions/0011-vision-and-embeddings.md).
+Design and llama.cpp sources: [ADR 0011](decisions/0011-vision-and-embeddings.md) (vision,
+embeddings) and [ADR 0015](decisions/0015-audio-encoders.md) (audio).

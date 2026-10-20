@@ -78,6 +78,9 @@ All notable changes to this project are documented here. The format follows
   context, q8_0 KV instead of f16), and warn `tight on RAM` when they cannot (ADR 0007).
 - `scan` marks fits that need a q4_0 KV cache or break the RAM margin with `*`; `--json`
   has them as `caveats`.
+- Plans for BERT-style embedding encoders say `no KV` and no longer mention an output head.
+- README: an example for every feature; new pages `docs/speed.md`, `docs/multi-gpu.md` and
+  `docs/vision-embeddings.md`.
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

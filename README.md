@@ -50,6 +50,94 @@ Name a file (`hf://org/repo/file.gguf`) for the exact plan; the command then use
 catalog; `--pretend "2x rtx 3090"` plans a split across two cards. Gated repos need
 `HF_TOKEN`; headers are cached under `~/.loadmaster/hf`.
 
+## Examples
+
+The outputs below are real runs on `--pretend` hardware with `hf://` headers, trimmed. You
+can paste any of them without a GPU or a download. The `probe` and `report` outputs come from
+loadmaster's fake runtime, so their numbers are illustrative.
+
+**Find what you already have.** `scan` reads the HF cache, Ollama and LM Studio:
+
+```console
+$ lm scan
+NAME                    SOURCE   KIND         SIZE  ARCH       QUANT            CTX  MMPROJ TEMPLATE  8k      32k     128k
+llama3.2:1b             ollama   chat     1.23 GiB  llama      Q8_0          131072  -      da36d51c  gpu     gpu     gpu*
+BAAI/bge-small-en-v1.5  hf       embed    0.12 GiB  bert       F32              512  -      -         -       -       -
+```
+
+**Speed.** When the GPU's bandwidth is known, plans and alternatives show tokens per second
+([docs/speed.md](docs/speed.md)):
+
+```console
+$ lm plan hf://bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf --pretend "rtx 4090" --ctx 32768
+fits: 2.66 GiB of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (pretend); all 16 layers and the output head on GPU, f16 KV
+speed: ~366-638 tok/s generating at 4k context, ~269-400 at 32k (estimate)
+```
+
+**Several GPUs.** Layers are split across the cards; vLLM plans pick a tensor-parallel size
+([docs/multi-gpu.md](docs/multi-gpu.md)):
+
+```console
+$ lm plan hf://bartowski/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q4_K_M.gguf --pretend "2x rtx 3090" --ctx 32768
+fits: 46.47 GiB across 2 GPUs (GPU0 23.4 / 23.5 GiB, GPU1 23.1 / 23.5 GiB); all 80 layers and the output head on GPU, q8_0 KV
+speed: ~18-21 tok/s generating at 4k context, ~16-19 at 32k (estimate)
+
+llama-server --hf-repo bartowski/Llama-3.3-70B-Instruct-GGUF --hf-file Llama-3.3-70B-Instruct-Q4_K_M.gguf -c 32768 -ngl 81 --device CUDA0,CUDA1 --split-mode layer --tensor-split 41,40 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+```
+
+**Vision models.** The projector (`mmproj`) is found next to the model and counted, image
+tokens and encoder included ([docs/vision-embeddings.md](docs/vision-embeddings.md)):
+
+```console
+$ lm plan hf://ggml-org/gemma-3-4b-it-GGUF/gemma-3-4b-it-Q4_K_M.gguf --pretend "rtx 3060" --ctx 16384
+fits: 4.81 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); all 34 layers and the output head on GPU, f16 KV
+
+llama-server --hf-repo ggml-org/gemma-3-4b-it-GGUF --hf-file gemma-3-4b-it-Q4_K_M.gguf --mmproj-url https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf -c 16384 -ngl 35 -fa on -np 1 --jinja
+```
+
+**Embedding models** get the embedding flags, and BERT-style encoders no KV cache:
+
+```console
+$ lm plan hf://CompendiumLabs/bge-small-en-v1.5-gguf/bge-small-en-v1.5-q8_0.gguf --pretend "rtx 3060"
+fits: 0.83 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); all 12 layers on GPU, no KV
+
+llama-server --hf-repo CompendiumLabs/bge-small-en-v1.5-gguf --hf-file bge-small-en-v1.5-q8_0.gguf -c 512 -ngl 13 -fa on -np 1 --embeddings --pooling cls -ub 512 -b 512
+```
+
+**Serve several models on one port**, unloading idle ones when a request needs room:
+
+```console
+$ lm init llama3.2:1b qwen3:8b       # plan each model, write models.lock
+$ lm up --verify                     # serve on 127.0.0.1:8080, probe each model as it starts
+$ lm status                          # what is loaded, its footprint, its probe verdict
+```
+
+**Check that tool calls work** on any OpenAI-compatible endpoint (`--embeddings` for an
+embedding model):
+
+```console
+$ lm probe http://127.0.0.1:8080 --model qwen3-8b
+  tool.single*             FAIL  call_in_content
+  tool.parallel            FAIL  parallel_in_content
+  schema.strict*           pass
+  ...
+verdict: fail (failures: call_in_content, no_call, parallel_in_content); * = core fixture
+```
+
+**Tell us how the prediction did.** `report` runs the planned command once, stops after one
+short request, and writes what llama.cpp really used next to the prediction:
+
+```console
+$ lm report Qwen3-8B-Q4_K_M.gguf --ctx 8192            # on a machine with a GPU
+plan: fits, 6.61 GiB predicted on NVIDIA GeForce RTX 4090
+will run: llama-server -m Qwen3-8B-Q4_K_M.gguf -c 8192 -ngl 37 -fa on -np 1 --jinja -lv 4
+continue? [y/N] y
+result: fits · generation 41.2 tok/s, prompt 1830 tok/s
+wrote loadmaster-report-qwen3-8b-q4-k-m-on-nvidia-geforce-rtx-4090-at-ctx-8192-predicted-fits-observed-fits.toml
+to share it, open this link, review the prefilled issue and submit (loadmaster sends nothing):
+  https://github.com/bercaakbayir/loadmaster/issues/new?template=validation.yml&...
+```
+
 ## Why "loadmaster"?
 
 On a cargo aircraft the loadmaster decides whether the flight can happen at all: they weigh
@@ -149,6 +237,9 @@ cargo xtask fetch-headers && cargo xtask validate
 
 ## Docs
 
+[speed estimates](docs/speed.md) ·
+[several GPUs](docs/multi-gpu.md) ·
+[vision and embedding models](docs/vision-embeddings.md) ·
 [models.lock reference](docs/lockfile.md) ·
 [probe fixtures and failure classes](docs/fixtures.md) ·
 [validation](docs/validation.md) ·

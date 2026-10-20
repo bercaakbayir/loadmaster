@@ -74,6 +74,8 @@ fn an_encoder_has_no_kv_cache_and_one_batch() {
     }
     assert!(!argv.contains("--jinja"));
     assert_eq!(p.speed, None, "no generation, no tok/s");
+    let summary = loadmaster_plan::explain::summary(&p);
+    assert!(summary.contains("all 12 layers on GPU, no KV"), "{summary}");
     assert!(
         p.warnings
             .iter()

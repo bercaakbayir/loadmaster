@@ -47,8 +47,21 @@ fn terms(out: &mut String, terms: &[Term]) {
     }
 }
 
+/// BERT-style encoders: no KV cache and no output head.
+fn is_encoder(p: &Plan) -> bool {
+    matches!(
+        p.model.kind,
+        loadmaster_model::ModelKind::Embedding { encoder: true, .. }
+    )
+}
+
 fn placement_line(p: &Plan) -> String {
     let n = p.model.n_layer;
+    let head = if is_encoder(p) {
+        ""
+    } else {
+        " and the output head"
+    };
     let pl = &p.placement;
     let layers = pl.gpu_layer_count(n);
     let experts = if pl.n_cpu_moe > 0 {
@@ -62,14 +75,17 @@ fn placement_line(p: &Plan) -> String {
     if !pl.output_on_gpu(n) {
         "everything on CPU".to_owned()
     } else if layers == n {
-        format!("all {n} layers and the output head on GPU{experts}")
+        format!("all {n} layers{head} on GPU{experts}")
     } else {
-        format!("{layers}/{n} layers and the output head on GPU, the rest on CPU{experts}")
+        format!("{layers}/{n} layers{head} on GPU, the rest on CPU{experts}")
     }
 }
 
 /// The KV cache type in the runtime's own words.
 pub fn kv_label(p: &Plan) -> &'static str {
+    if is_encoder(p) {
+        return "no";
+    }
     match (p.runtime, p.kv) {
         (crate::Runtime::Vllm, crate::KvType::F16) => "auto",
         (crate::Runtime::Exl3, kv) => emit::exl3::cache_mode(kv),
@@ -314,7 +330,15 @@ pub fn explain(p: &Plan) -> String {
 
     writeln!(out, "BALANCE  {}", placement_line(p)).unwrap();
     writeln!(out, "  ctx {}: {}", p.ctx, p.ctx_reason).unwrap();
-    writeln!(out, "  KV cache {}: {}", kv_label(p), p.kv_reason).unwrap();
+    if is_encoder(p) {
+        writeln!(
+            out,
+            "  KV cache: none, an encoder takes each input in one batch"
+        )
+        .unwrap();
+    } else {
+        writeln!(out, "  KV cache {}: {}", kv_label(p), p.kv_reason).unwrap();
+    }
     if p.runtime == crate::Runtime::LlamaCpp {
         writeln!(
             out,

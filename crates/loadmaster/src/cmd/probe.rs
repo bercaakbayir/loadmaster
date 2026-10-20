@@ -139,12 +139,19 @@ pub fn render(r: &Report, style: crate::ui::Style) -> String {
         } else {
             x.id.clone()
         };
-        let state = match &x.outcome {
-            Outcome::Pass => style.green(&format!("{state:<5}")),
-            Outcome::Fail(_) => style.red(&format!("{state:<5}")),
-            Outcome::Skip(_) => style.dim(&format!("{state:<5}")),
+        // Pad before styling, and not at all when nothing follows.
+        let padded = if detail.is_empty() {
+            state
+        } else {
+            format!("{state:<5} {detail}")
         };
-        writeln!(o, "{}", format!("  {id:<24} {state} {detail}").trim_end()).unwrap();
+        let (word, rest) = padded.split_at(4);
+        let word = match &x.outcome {
+            Outcome::Pass => style.green(word),
+            Outcome::Fail(_) => style.red(word),
+            Outcome::Skip(_) => style.dim(word),
+        };
+        writeln!(o, "  {id:<24} {word}{rest}").unwrap();
     }
     let why = match r.verdict.as_str() {
         "pass" => "every fixture passed".to_owned(),

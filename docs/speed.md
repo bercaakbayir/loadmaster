@@ -1,16 +1,27 @@
 # Speed estimates
 
 When loadmaster knows the GPU's memory bandwidth, every llama.cpp plan estimates how fast the
-model generates, at 4k context and at the planned context:
+model generates at the planned context (`--explain` adds 4k context):
 
 ```console
 $ lm plan hf://bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf --pretend "rtx 4090" --ctx 32768
-fits: 2.66 GiB of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (pretend); all 16 layers and the output head on GPU, f16 KV
-speed: ~366-638 tok/s generating at 4k context, ~269-400 at 32k (estimate)
-...
-alternatives:
-  more context (65536)      3.76 GiB ( +1.09 GiB)  all on GPU, f16 KV                     ~366-638 tok/s (estimate)
-  quant up (Q5_K_M)         2.79 GiB ( +0.12 GiB)  all on GPU, f16 KV                     ~348-589 tok/s (estimate)
+Llama 3.2 1B Instruct  ·  Q4_K_M  ·  16 layers  ·  ctx 32768
+
+✓ Fits on RTX 4090 (pretend)
+  memory     2.7 of 23.5 GiB
+  layers     all 16 on GPU
+  KV cache   f16
+  speed      ~269-400 tok/s at 32k context (estimate)
+
+Run:
+  llama-server --hf-repo bartowski/Llama-3.2-1B-Instruct-GGUF \
+    --hf-file Llama-3.2-1B-Instruct-Q4_K_M.gguf -c 32768 -ngl 17 -fa on -np 1 --jinja
+
+Other options:
+  ctx 65536   3.8 GiB  all on GPU, f16 KV  ~207-281 tok/s
+  Q5_K_M     ~2.8 GiB  all on GPU, f16 KV  ~259-380 tok/s
+  Q3_K_M     ~2.5 GiB  all on GPU, f16 KV  ~282-427 tok/s
+  ~ = size estimated; plan that file to confirm
 ```
 
 The alternatives show tokens per second too, so "a bigger quant, or more layers on the CPU"
@@ -31,8 +42,13 @@ No bandwidth, no estimate: loadmaster never guesses one.
 
 ```console
 $ lm plan …Llama-3.2-1B-Instruct-Q4_K_M.gguf --pretend "16GB@448" --ctx 8192
-fits: 1.86 GiB of 15.51 GiB usable on 16 GiB GPU (pretend); all 16 layers and the output head on GPU, f16 KV
-speed: ~253-367 tok/s generating at 4k context, ~234-331 at 8k (estimate)
+Llama 3.2 1B Instruct  ·  Q4_K_M  ·  16 layers  ·  ctx 8192
+
+✓ Fits on 16 GiB GPU (pretend)
+  memory     1.9 of 15.5 GiB
+  layers     all 16 on GPU
+  KV cache   f16
+  speed      ~234-331 tok/s at 8k context (estimate)
 ```
 
 ## How it is worked out

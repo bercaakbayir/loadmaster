@@ -8,9 +8,19 @@ it to the command:
 
 ```console
 $ lm plan hf://ggml-org/gemma-3-4b-it-GGUF/gemma-3-4b-it-Q4_K_M.gguf --pretend "rtx 3060" --ctx 16384
-fits: 4.81 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); all 34 layers and the output head on GPU, f16 KV
+Gemma 3 4b It  ·  Q4_K_M  ·  34 layers  ·  ctx 16384
 
-llama-server --hf-repo ggml-org/gemma-3-4b-it-GGUF --hf-file gemma-3-4b-it-Q4_K_M.gguf --mmproj-url https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf -c 16384 -ngl 35 -fa on -np 1 --jinja
+✓ Fits on RTX 3060 12GB (pretend)
+  memory     4.8 of 11.5 GiB
+  layers     all 34 on GPU
+  KV cache   f16
+  projector  1.1 GiB on GPU, one image
+  speed      ~81-105 tok/s at 16k context (estimate)
+
+Run:
+  llama-server --hf-repo ggml-org/gemma-3-4b-it-GGUF --hf-file gemma-3-4b-it-Q4_K_M.gguf \
+    --mmproj-url https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf \
+    -c 16384 -ngl 35 -fa on -np 1 --jinja
 ```
 
 `--explain` shows the two vision terms:
@@ -35,8 +45,19 @@ RAM. Images encode more slowly, but the GPU gets that memory back:
 
 ```console
 $ lm plan …gemma-3-4b-it-Q4_K_M.gguf --pretend "rtx 3060" --ctx 16384 --no-mmproj-offload
-fits: 3.71 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); …
-llama-server … --mmproj-url … --no-mmproj-offload -c 16384 -ngl 35 -fa on -np 1 --jinja
+Gemma 3 4b It  ·  Q4_K_M  ·  34 layers  ·  ctx 16384
+
+✓ Fits on RTX 3060 12GB (pretend)
+  memory     3.7 of 11.5 GiB
+  layers     all 34 on GPU
+  KV cache   f16
+  projector  1.1 GiB on CPU (--no-mmproj-offload)
+  speed      ~81-105 tok/s at 16k context (estimate)
+
+Run:
+  llama-server --hf-repo ggml-org/gemma-3-4b-it-GGUF --hf-file gemma-3-4b-it-Q4_K_M.gguf \
+    --mmproj-url https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf \
+    --no-mmproj-offload -c 16384 -ngl 35 -fa on -np 1 --jinja
 ```
 
 Plans that offload layers or fall short suggest this themselves.
@@ -47,9 +68,17 @@ Plans that offload layers or fall short suggest this themselves.
 
 ```console
 $ lm plan hf://CompendiumLabs/bge-small-en-v1.5-gguf/bge-small-en-v1.5-q8_0.gguf --pretend "rtx 3060"
-fits: 0.83 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); all 12 layers on GPU, no KV
+bge-small-en-v1.5  ·  Q8_0  ·  12 layers  ·  ctx 512
 
-llama-server --hf-repo CompendiumLabs/bge-small-en-v1.5-gguf --hf-file bge-small-en-v1.5-q8_0.gguf -c 512 -ngl 13 -fa on -np 1 --embeddings --pooling cls -ub 512 -b 512
+✓ Fits on RTX 3060 12GB (pretend)
+  memory     0.8 of 11.5 GiB
+  layers     all 12 on GPU
+  embeddings cls pooling
+
+Run:
+  llama-server --hf-repo CompendiumLabs/bge-small-en-v1.5-gguf \
+    --hf-file bge-small-en-v1.5-q8_0.gguf -c 512 -ngl 13 -fa on -np 1 --embeddings \
+    --pooling cls -ub 512 -b 512
 ```
 
 - **Detected** from the GGUF architecture (`bert`, `nomic-bert`, `jina-bert-v2`, …) or a

@@ -81,6 +81,20 @@ All notable changes to this project are documented here. The format follows
 - Plans for BERT-style embedding encoders say `no KV` and no longer mention an output head.
 - README: an example for every feature; new pages `docs/speed.md`, `docs/multi-gpu.md` and
   `docs/vision-embeddings.md`.
+- Readable output (ADR 0013): `plan` leads with a verdict (`✓ Fits on 2× RTX 3090`,
+  `✗ Doesn't fit: …`) and lists one fact per line; warnings are one line each, with the
+  detail in `--explain`; the command wraps on a terminal and stays on one line when piped;
+  up to three alternatives that fit, labelled `ctx 40960` / `Q5_K_M`, `~` for estimated
+  sizes. JSON: alternative labels changed accordingly and gain `estimated`; warnings read
+  `short: detail`.
+- `plan --command` prints only the launch command; `--color auto|always|never` everywhere,
+  `NO_COLOR` honoured.
+- `hf://` quant table: TOK/S column, `~gpu` for estimated rows, `← best fit`; the GPU-bytes
+  column moved to `--json`.
+- `scan` shows eight columns; `--wide` adds ARCH, CTX, MMPROJ, TEMPLATE and lists skipped
+  directories.
+- `report` prints a predicted-vs-observed summary instead of the whole file; `--show` prints
+  the file too (ADR 0010 amended).
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

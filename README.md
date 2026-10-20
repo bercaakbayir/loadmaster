@@ -5,24 +5,33 @@ it, and does it actually emit tool calls?** loadmaster answers all three for loc
 real model file, with every number shown.
 
 ```console
-$ loadmaster plan Qwen3-30B-A3B-Q4_K_M.gguf --ctx 32768
-Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE  ·  ctx 32768
-fits: 11.52 GiB of 11.74 GiB usable on NVIDIA GeForce RTX 3060; all 48 layers and the output head on GPU, routed experts of the first 22 on CPU, q8_0 KV
+$ loadmaster plan hf://unsloth/Qwen3-30B-A3B-GGUF/Qwen3-30B-A3B-Q4_K_M.gguf --pretend "rtx 3060" --ctx 32768
+Qwen3-30B-A3B  ·  Q4_K_M  ·  48 layers · MoE  ·  ctx 32768
 
-llama-server -m Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 49 --n-cpu-moe 22 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+✓ Fits on RTX 3060 12GB (pretend) with CPU offload
+  memory     11.5 of 11.5 GiB
+  CPU RAM    8.5 of 24.0 GiB available
+  layers     all 48 on GPU, experts of the first 24 on CPU
+  KV cache   q8_0
+  speed      ~36-60 tok/s at 32k context (estimate)
 
-alternatives:
-  more context (40960)     11.63 GiB ( +0.11 GiB)  experts of 23 layers on CPU, q8_0 KV    2.3-5.0x slower (estimate)
-  quant up (Q5_K_M)        11.54 GiB ( +0.02 GiB)  experts of 26 layers on CPU, q8_0 KV    2.5-5.5x slower (estimate)
-                           size estimated from 5.70 bpw; plan the real file to confirm
-  quant down (Q3_K_M)      11.49 GiB ( -0.03 GiB)  experts of 15 layers on CPU, q8_0 KV    1.9-3.6x slower (estimate)
-                           size estimated from 3.91 bpw; plan the real file to confirm
+Run:
+  llama-server --hf-repo unsloth/Qwen3-30B-A3B-GGUF --hf-file Qwen3-30B-A3B-Q4_K_M.gguf \
+    -c 32768 -ngl 49 --n-cpu-moe 24 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+
+Other options:
+  ctx 40960   11.3 GiB  experts of 26 layers on CPU, q8_0 KV  ~33-55 tok/s
+  Q5_K_M     ~11.4 GiB  experts of 28 layers on CPU, q8_0 KV  ~30-52 tok/s
+  Q3_K_M     ~11.3 GiB  experts of 18 layers on CPU, q8_0 KV  ~45-73 tok/s
+  ~ = size estimated; plan that file to confirm
 ```
 
 `--explain` prints every term of the budget (weights, KV cache, compute buffer, vision
 projector, headroom) with its inputs, and every configuration that was tried. When the GPU's
 memory bandwidth is known, plans also estimate generation speed, as a band fitted to
-published llama.cpp benchmarks (`speed: ~103-144 tok/s generating at 4k context`; ADR 0009).
+published llama.cpp benchmarks (ADR 0009). On a terminal the output is coloured and the
+command wrapped; piped, it is plain with the command on one line, and `--command` prints only
+that line. `--json` is the stable format for scripts.
 
 ### Try it without the GPU or the download
 
@@ -31,16 +40,20 @@ stands in for hardware you don't have:
 
 ```console
 $ loadmaster plan hf://unsloth/Qwen3-30B-A3B-GGUF --pretend "rtx 4090" --ctx 32768
-Qwen3-30B-A3B · 26 quants · NVIDIA GeForce RTX 4090 (pretend) (23.50 GiB usable)
-QUANT             SIZE  FIT                      CTX  KV           GPU
-Q3_K_M       13.70 GiB  gpu                    32768  f16    17.50 GiB  *
-Q4_K_M       17.28 GiB  gpu                    32768  f16    21.05 GiB
-Q5_K_M       20.23 GiB  gpu                    32768  q8_0   22.56 GiB  *
-Q6_K         23.37 GiB  offload                32768  q8_0   23.20 GiB  *
-Q8_0         30.25 GiB  offload                32768  q8_0   23.42 GiB  *
-BF16         56.90 GiB  no, 30.52 GiB short        -  -       5.05 GiB  *
+Qwen3-30B-A3B  ·  26 quants  ·  RTX 4090 (pretend), 23.5 GiB usable
+
+QUANT            SIZE  FIT                   CTX  KV       TOK/S
+Q3_K_M       13.7 GiB  ~gpu                32768  f16    ~98-151
+Q4_K_M       17.3 GiB  gpu                 32768  f16    ~94-142
+Q5_K_M       20.2 GiB  ~gpu                32768  q8_0  ~106-171
+UD-Q5_K_XL   20.2 GiB  ~gpu                32768  q8_0  ~106-171  ← best fit
+Q6_K         23.4 GiB  ~offload            32768  q8_0   ~73-127
+Q8_0         30.3 GiB  ~offload            32768  q8_0    ~40-76
 ...
-* estimated: the Q4_K_M header scaled to that file's size
+BF16         56.9 GiB  ✗ ~30.5 GiB short       -  -            -
+
+~ = planned from the Q4_K_M header, scaled to that file's size
+exact plan for the best fit: loadmaster plan hf://unsloth/Qwen3-30B-A3B-GGUF/Qwen3-30B-A3B-UD-Q5_K_XL.gguf
 ```
 
 Name a file (`hf://org/repo/file.gguf`) for the exact plan; the command then uses
@@ -60,9 +73,13 @@ loadmaster's fake runtime, so their numbers are illustrative.
 
 ```console
 $ lm scan
-NAME                    SOURCE   KIND         SIZE  ARCH       QUANT            CTX  MMPROJ TEMPLATE  8k      32k     128k
-llama3.2:1b             ollama   chat     1.23 GiB  llama      Q8_0          131072  -      da36d51c  gpu     gpu     gpu*
-BAAI/bge-small-en-v1.5  hf       embed    0.12 GiB  bert       F32              512  -      -         -       -       -
+NAME                    SOURCE    KIND         SIZE  QUANT       8k       32k      128k
+llama3.2:1b             ollama    chat      1.2 GiB  Q8_0        gpu      gpu      gpu*
+BAAI/bge-small-en-v1.5  hf        embed     0.1 GiB  F32         -        -        -
+
+on Apple M2: gpu = fits on GPU · offload = needs CPU
+* = only with q4_0 KV or under the 15% free-RAM margin; `loadmaster plan <name> --ctx <n>` says which
+! 1 directory skipped (--wide lists it)
 ```
 
 **Speed.** When the GPU's bandwidth is known, plans and alternatives show tokens per second
@@ -70,8 +87,13 @@ BAAI/bge-small-en-v1.5  hf       embed    0.12 GiB  bert       F32              
 
 ```console
 $ lm plan hf://bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf --pretend "rtx 4090" --ctx 32768
-fits: 2.66 GiB of 23.50 GiB usable on NVIDIA GeForce RTX 4090 (pretend); all 16 layers and the output head on GPU, f16 KV
-speed: ~366-638 tok/s generating at 4k context, ~269-400 at 32k (estimate)
+Llama 3.2 1B Instruct  ·  Q4_K_M  ·  16 layers  ·  ctx 32768
+
+✓ Fits on RTX 4090 (pretend)
+  memory     2.7 of 23.5 GiB
+  layers     all 16 on GPU
+  KV cache   f16
+  speed      ~269-400 tok/s at 32k context (estimate)
 ```
 
 **Several GPUs.** Layers are split across the cards; vLLM plans pick a tensor-parallel size
@@ -79,10 +101,20 @@ speed: ~366-638 tok/s generating at 4k context, ~269-400 at 32k (estimate)
 
 ```console
 $ lm plan hf://bartowski/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q4_K_M.gguf --pretend "2x rtx 3090" --ctx 32768
-fits: 46.47 GiB across 2 GPUs (GPU0 23.4 / 23.5 GiB, GPU1 23.1 / 23.5 GiB); all 80 layers and the output head on GPU, q8_0 KV
-speed: ~18-21 tok/s generating at 4k context, ~16-19 at 32k (estimate)
+Llama 3.3 70B Instruct  ·  Q4_K_M  ·  80 layers  ·  ctx 32768
 
-llama-server --hf-repo bartowski/Llama-3.3-70B-Instruct-GGUF --hf-file Llama-3.3-70B-Instruct-Q4_K_M.gguf -c 32768 -ngl 81 --device CUDA0,CUDA1 --split-mode layer --tensor-split 41,40 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
+✓ Fits on 2× RTX 3090 (pretend)
+  memory     46.5 of 47.0 GiB   GPU0 23.4/23.5 · GPU1 23.1/23.5
+  layers     all 80 on GPU
+  KV cache   q8_0
+  speed      ~16-19 tok/s at 32k context (estimate)
+
+! split across GPUs: not validated yet
+
+Run:
+  llama-server --hf-repo bartowski/Llama-3.3-70B-Instruct-GGUF \
+    --hf-file Llama-3.3-70B-Instruct-Q4_K_M.gguf -c 32768 -ngl 81 --device CUDA0,CUDA1 \
+    --split-mode layer --tensor-split 41,40 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
 ```
 
 **Vision models.** The projector (`mmproj`) is found next to the model and counted, image
@@ -90,18 +122,36 @@ tokens and encoder included ([docs/vision-embeddings.md](docs/vision-embeddings.
 
 ```console
 $ lm plan hf://ggml-org/gemma-3-4b-it-GGUF/gemma-3-4b-it-Q4_K_M.gguf --pretend "rtx 3060" --ctx 16384
-fits: 4.81 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); all 34 layers and the output head on GPU, f16 KV
+Gemma 3 4b It  ·  Q4_K_M  ·  34 layers  ·  ctx 16384
 
-llama-server --hf-repo ggml-org/gemma-3-4b-it-GGUF --hf-file gemma-3-4b-it-Q4_K_M.gguf --mmproj-url https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf -c 16384 -ngl 35 -fa on -np 1 --jinja
+✓ Fits on RTX 3060 12GB (pretend)
+  memory     4.8 of 11.5 GiB
+  layers     all 34 on GPU
+  KV cache   f16
+  projector  1.1 GiB on GPU, one image
+  speed      ~81-105 tok/s at 16k context (estimate)
+
+Run:
+  llama-server --hf-repo ggml-org/gemma-3-4b-it-GGUF --hf-file gemma-3-4b-it-Q4_K_M.gguf \
+    --mmproj-url https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf \
+    -c 16384 -ngl 35 -fa on -np 1 --jinja
 ```
 
 **Embedding models** get the embedding flags, and BERT-style encoders no KV cache:
 
 ```console
 $ lm plan hf://CompendiumLabs/bge-small-en-v1.5-gguf/bge-small-en-v1.5-q8_0.gguf --pretend "rtx 3060"
-fits: 0.83 GiB of 11.51 GiB usable on NVIDIA GeForce RTX 3060 12GB (pretend); all 12 layers on GPU, no KV
+bge-small-en-v1.5  ·  Q8_0  ·  12 layers  ·  ctx 512
 
-llama-server --hf-repo CompendiumLabs/bge-small-en-v1.5-gguf --hf-file bge-small-en-v1.5-q8_0.gguf -c 512 -ngl 13 -fa on -np 1 --embeddings --pooling cls -ub 512 -b 512
+✓ Fits on RTX 3060 12GB (pretend)
+  memory     0.8 of 11.5 GiB
+  layers     all 12 on GPU
+  embeddings cls pooling
+
+Run:
+  llama-server --hf-repo CompendiumLabs/bge-small-en-v1.5-gguf \
+    --hf-file bge-small-en-v1.5-q8_0.gguf -c 512 -ngl 13 -fa on -np 1 --embeddings \
+    --pooling cls -ub 512 -b 512
 ```
 
 **Serve several models on one port**, unloading idle ones when a request needs room:
@@ -117,6 +167,7 @@ embedding model):
 
 ```console
 $ lm probe http://127.0.0.1:8080 --model qwen3-8b
+loadmaster probe 0.3.0 · http://127.0.0.1:8080 · model qwen3-8b · llama.cpp b6700-abc1234
   tool.single*             FAIL  call_in_content
   tool.parallel            FAIL  parallel_in_content
   schema.strict*           pass
@@ -128,13 +179,19 @@ verdict: fail (failures: call_in_content, no_call, parallel_in_content); * = cor
 short request, and writes what llama.cpp really used next to the prediction:
 
 ```console
-$ lm report Qwen3-8B-Q4_K_M.gguf --ctx 8192            # on a machine with a GPU
-plan: fits, 6.61 GiB predicted on NVIDIA GeForce RTX 4090
-will run: llama-server -m Qwen3-8B-Q4_K_M.gguf -c 8192 -ngl 37 -fa on -np 1 --jinja -lv 4
+$ lm report Qwen3-8B-Q4_K_M.gguf --ctx 32768           # on a machine with a GPU
+plan: fits on RTX 4090, 10.1 GiB predicted
+will run: llama-server -m Qwen3-8B-Q4_K_M.gguf -c 32768 -ngl 37 -fa on -np 1 --jinja -lv 4
+(stops after one 128-token request; the log is kept for you)
 continue? [y/N] y
-result: fits · generation 41.2 tok/s, prompt 1830 tok/s
-wrote loadmaster-report-qwen3-8b-q4-k-m-on-nvidia-geforce-rtx-4090-at-ctx-8192-predicted-fits-observed-fits.toml
-to share it, open this link, review the prefilled issue and submit (loadmaster sends nothing):
+✓ Prediction held: fits on RTX 4090
+                    predicted      observed
+  GPU buffers         9.3 GiB       9.1 GiB
+  speed         103-144 tok/s   118.6 tok/s
+  load time                 -         0.5 s
+
+wrote loadmaster-report-qwen3-8b-q4-k-m-on-nvidia-geforce-rtx-4090-at-ctx-32768-predicted-fits-observed-fits.toml (no paths, hosts or users; --show prints it)
+review and submit it here (loadmaster sends nothing):
   https://github.com/bercaakbayir/loadmaster/issues/new?template=validation.yml&...
 ```
 
@@ -159,9 +216,9 @@ same way tomorrow.
 
 | Command | Does |
 |---|---|
-| `loadmaster scan [--path DIR] [--json]` | Index the HF cache, Ollama, LM Studio and loose dirs (read-only), with fit at 8k/32k/128k |
+| `loadmaster scan [--path DIR] [--wide] [--json]` | Index the HF cache, Ollama, LM Studio and loose dirs (read-only), with fit at 8k/32k/128k |
 | `loadmaster gpu [--json] [--pretend HW\|list]` | GPUs and usable memory (NVML, Apple unified memory), or a pretend one |
-| `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain] [--json]` | Memory budget, the exact launch command, alternatives |
+| `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain\|--json\|--command]` | Memory budget, the exact launch command, alternatives |
 | `loadmaster plan hf://org/repo[/file.gguf] [--offline]` | The same from Hub headers only; a bare GGUF repo compares every quant |
 | `loadmaster init <names…\|--all>` / `add <model>` | Write `models.lock` with frozen flags and footprints |
 | `loadmaster plan <name> --update` | Re-plan one lockfile entry and show the diff |
@@ -174,7 +231,8 @@ same way tomorrow.
 `<model>` is a `.gguf` file, a Hugging Face model directory, a name from `scan`
 (`llama3.2:1b`, `org/repo`), or `hf://org/repo[/file]`: from the local cache when it is there,
 else from the Hub's headers. `--pretend HW` works on `plan`, `scan`, `gpu`, `init` and `add`.
-`lm` is installed as a short alias. Errors exit 3.
+`lm` is installed as a short alias. `--color auto|always|never` works everywhere (`NO_COLOR`
+is honoured). Errors exit 3.
 
 ## How it works
 

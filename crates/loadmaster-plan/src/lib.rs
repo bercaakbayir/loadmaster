@@ -114,6 +114,53 @@ fn is_chat(k: &loadmaster_model::ModelKind) -> bool {
     *k == loadmaster_model::ModelKind::Chat
 }
 
+/// A caveat on a plan: `short` for the summary, `detail` (may be empty) for `--explain`.
+/// Serialises and displays as `short: detail`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Warning {
+    pub kind: WarningKind,
+    pub short: String,
+    pub detail: String,
+}
+
+/// Warnings other code acts on, so a reworded text cannot silently break them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarningKind {
+    /// Unified memory: the plan leaves under the free-RAM margin (ADR 0007).
+    TightRam,
+    Other,
+}
+
+impl Warning {
+    pub fn new(short: impl Into<String>, detail: impl Into<String>) -> Self {
+        Warning {
+            kind: WarningKind::Other,
+            short: short.into(),
+            detail: detail.into(),
+        }
+    }
+
+    pub fn is(&self, kind: WarningKind) -> bool {
+        self.kind == kind
+    }
+}
+
+impl std::fmt::Display for Warning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.detail.is_empty() {
+            f.write_str(&self.short)
+        } else {
+            write!(f, "{}: {}", self.short, self.detail)
+        }
+    }
+}
+
+impl Serialize for Warning {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
 /// A config file a runtime reads instead of (or as well as) flags.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ConfigFile {
@@ -144,7 +191,7 @@ pub struct Plan {
     /// Where the available host memory figure came from.
     pub host_basis: String,
     pub trials: Vec<Trial>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Warning>,
     /// The launch command as argv.
     pub argv: Vec<String>,
     /// For runtimes configured by file (tabbyAPI), the file to write next to the command.
@@ -176,6 +223,9 @@ pub struct Fix {
 pub struct NoFit {
     pub model: ModelSummary,
     pub gpu: Gpu,
+    /// Every GPU tried, when more than one (`gpu` is the first).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gpus: Vec<Gpu>,
     pub ctx: u32,
     /// `gpu` or `host`: which budget is exceeded by the closest configuration.
     pub limit: &'static str,
@@ -461,9 +511,10 @@ pub(crate) fn plan_one(
                 ..req.clone()
             };
             let mut p = search_plan(model, hw, gpu, &req, false)?;
-            p.warnings.push(
-                "ExLlamaV3 compute buffer is estimated with the llama.cpp formula; not yet validated".into(),
-            );
+            p.warnings.push(Warning::new(
+                "ExLlamaV3 compute buffer not validated",
+                "estimated with the llama.cpp formula",
+            ));
             Ok(p)
         }
     }
@@ -486,27 +537,33 @@ fn device_names(hw: &HwSnapshot, used: &[&Gpu]) -> Vec<String> {
 
 /// CUDA numbers GPUs fastest-first unless told otherwise; the index loadmaster reads (NVML,
 /// PCI bus order) then names a different card when the GPUs differ.
-fn device_order_warning(hw: &HwSnapshot) -> Option<String> {
+fn device_order_warning(hw: &HwSnapshot) -> Option<Warning> {
     let nvidia: Vec<&Gpu> = hw
         .gpus
         .iter()
         .filter(|g| g.vendor == Vendor::Nvidia)
         .collect();
     (nvidia.len() > 1 && nvidia.iter().any(|g| g.name != nvidia[0].name)).then(|| {
-        "the GPUs differ: run with CUDA_DEVICE_ORDER=PCI_BUS_ID so CUDA<i> in the command is the card loadmaster planned for (CUDA otherwise numbers them fastest first)".into()
+        Warning::new(
+            "mixed GPUs: run with CUDA_DEVICE_ORDER=PCI_BUS_ID",
+            "so CUDA<i> in the command is the card loadmaster planned for (CUDA otherwise numbers them fastest first)",
+        )
     })
 }
 
-fn common_warnings(model: &ModelInfo) -> Vec<String> {
+fn common_warnings(model: &ModelInfo) -> Vec<Warning> {
     let mut warnings = Vec::new();
     if !model.arch_known {
-        warnings.push(format!(
-            "architecture `{}` is not in loadmaster's table; assumed dense full attention",
-            model.arch
+        warnings.push(Warning::new(
+            format!("architecture `{}` unknown", model.arch),
+            "not in loadmaster's table; assumed dense full attention",
         ));
     }
     if !model.complete {
-        warnings.push("model file is shorter than its tensor table (incomplete download?)".into());
+        warnings.push(Warning::new(
+            "incomplete download?",
+            "the model file is shorter than its tensor table",
+        ));
     }
     warnings
 }
@@ -551,9 +608,12 @@ fn search_plan(
     let (ctx, ctx_reason) = match req.ctx {
         Some(ctx) => {
             if ctx > model.n_ctx_train {
-                warnings.push(format!(
-                    "ctx {ctx} exceeds the training context {}; quality degrades without RoPE scaling",
-                    model.n_ctx_train
+                warnings.push(Warning::new(
+                    format!(
+                        "ctx {ctx} is above the training context ({})",
+                        model.n_ctx_train
+                    ),
+                    "quality degrades without RoPE scaling",
                 ));
             }
             (ctx, "requested with --ctx".to_owned())
@@ -681,9 +741,10 @@ fn search_plan(
         );
     }
     if c.cfg.kv == KvType::Q4_0 && req.kv.is_none() {
-        warnings.push(
-            "q4_0 KV cache measurably lowers output quality; consider a smaller --ctx or a smaller quant".into(),
-        );
+        warnings.push(Warning::new(
+            "q4_0 KV cache lowers quality",
+            "measurably; consider a smaller --ctx or a smaller quant",
+        ));
     }
     if req.runtime == Runtime::LlamaCpp
         && let Some(w) = device_order_warning(hw)
@@ -691,9 +752,10 @@ fn search_plan(
         warnings.push(w);
     }
     if !c.fp.per_device.is_empty() {
-        warnings.push(
-            "split across GPUs: per-GPU compute buffers are assumed full size (unvalidated); llama.cpp may also enable pipeline parallelism".into(),
-        );
+        warnings.push(Warning::new(
+            "split across GPUs: not validated yet",
+            "per-GPU compute buffers are assumed full size; llama.cpp may also enable pipeline parallelism",
+        ));
     }
     let host_need = s.host_need(&c);
     let split_gpus: Vec<Gpu> = if c.fp.per_device.is_empty() {
@@ -704,14 +766,18 @@ fn search_plan(
     if !s.fits_safely(&c) {
         let spare = s.host_budget.saturating_sub(host_need);
         let fix = match s.max_ctx_where(ctx.saturating_sub(1), Search::full_fits_safely) {
-            Some(safe) => format!("--ctx {safe} leaves the margin"),
+            Some(safe) => format!("--ctx {safe} keeps the {UNIFIED_RAM_MARGIN_PCT}% margin"),
             None => "close other apps or use a smaller quant".into(),
         };
-        warnings.push(format!(
-            "tight on RAM: leaves {} of {} available RAM unused, under the {UNIFIED_RAM_MARGIN_PCT}% safety margin; free RAM falls as apps open, and running out with Metal memory wired can freeze or restart the machine. {fix}",
-            gib(spare),
-            gib(s.host_budget)
-        ));
+        warnings.push(Warning {
+            kind: WarningKind::TightRam,
+            short: format!("tight on RAM: {fix}"),
+            detail: format!(
+                "leaves {} of {} available RAM unused, under the {UNIFIED_RAM_MARGIN_PCT}% safety margin; free RAM falls as apps open, and running out with Metal memory wired can freeze or restart the machine",
+                gib(spare),
+                gib(s.host_budget)
+            ),
+        });
     }
     let speed = match req.runtime {
         Runtime::LlamaCpp if !model.is_embedding() && !c.fp.per_device.is_empty() => {
@@ -930,6 +996,11 @@ fn no_fit(
     Error::CannotFit(Box::new(NoFit {
         model: summary(model),
         gpu: s.gpu.clone(),
+        gpus: if s.gpus.len() > 1 {
+            s.gpus.iter().map(|g| (*g).clone()).collect()
+        } else {
+            Vec::new()
+        },
         ctx,
         limit,
         short_by,

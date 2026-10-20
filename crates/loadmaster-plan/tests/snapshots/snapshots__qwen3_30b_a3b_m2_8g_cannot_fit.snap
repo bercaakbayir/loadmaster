@@ -2,12 +2,14 @@
 source: crates/loadmaster-plan/tests/snapshots.rs
 expression: "render(QWEN3_30B_A3B, FakeHw::m2_8g(), Some(8192), None)"
 ---
-Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE  ·  ctx 8192
-does not fit: 12.60 GiB short on free RAM (unified memory: GPU and CPU share 8.00 GiB)
-cheapest fixes:
+Qwen3 30B A3B  ·  Q4_K_M  ·  48 layers · MoE  ·  ctx 8192
+
+✗ Doesn't fit: 12.6 GiB short on free RAM (GPU and CPU share 8.0 GiB)
+
+Try:
   - use a quant at least 12.60 GiB smaller than Q4_K_M (16.12 GiB)
 
-WEIGHT   closest configuration
+WEIGHT   Qwen3 30B A3B · qwen3moe · Q4_K_M · 48 layers · MoE, closest configuration
   weights              0.00 GiB   nothing on GPU; token embeddings 0.16 GiB stay on CPU
   KV cache             0.00 GiB   q8_0, no layers on GPU
   compute buffer       0.00 GiB   no layers on GPU

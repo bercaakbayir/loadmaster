@@ -30,6 +30,7 @@ loadmaster-lock.workspace = true
 loadmaster-serve.workspace = true
 loadmaster-probe.workspace = true
 anyhow.workspace = true
+anstream.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true

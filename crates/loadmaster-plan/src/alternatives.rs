@@ -21,11 +21,15 @@ pub struct Alternative {
     pub placement: String,
     /// Estimated slowdown versus everything on the GPU, as `(low, high)` x 100.
     pub slowdown_x100: Option<(u32, u32)>,
-    /// Estimated generation speed (tok/s x10, low and high) when bandwidth is known.
+    /// Estimated generation speed at `ctx` (tok/s x10, low and high) when bandwidth is
+    /// known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tok_s_x10: Option<(u32, u32)>,
     /// Caveats, e.g. that a quant size is estimated.
     pub note: Option<String>,
+    /// The size is scaled from another quant's header, not read from the file.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub estimated: bool,
 }
 
 /// Bits per weight of llama.cpp quant mixes (as reported by llama-quantize for 7-8B
@@ -116,7 +120,7 @@ fn placement_text(p: &Plan) -> String {
         )
     } else {
         format!(
-            "{}/{n} layers on GPU, {} KV",
+            "{} of {n} on GPU, {} KV",
             pl.gpu_layer_count(n),
             p.kv.flag()
         )
@@ -146,9 +150,10 @@ fn row(
             tok_s_x10: p
                 .speed
                 .as_ref()
-                .and_then(|s| s.at.first())
+                .and_then(|s| s.at.last())
                 .map(|a| a.tok_s_x10),
             note,
+            estimated: false,
         }),
         Err(Error::CannotFit(n)) => Some(Alternative {
             label,
@@ -161,6 +166,7 @@ fn row(
             slowdown_x100: None,
             tok_s_x10: None,
             note,
+            estimated: false,
         }),
         Err(_) => None,
     }
@@ -183,7 +189,7 @@ pub fn compute(
     let up = (base.ctx + 1).next_power_of_two().min(model.n_ctx_train);
     if up > base.ctx {
         out.extend(row(
-            format!("more context ({up})"),
+            format!("ctx {up}"),
             model,
             hw,
             gpu,
@@ -200,11 +206,11 @@ pub fn compute(
     {
         let lower = GGUF_LADDER.iter().rev().find(|(_, b)| *b < cur - 0.05);
         let higher = GGUF_LADDER.iter().find(|(_, b)| *b > cur + 0.05);
-        for (dir, step) in [("up", higher), ("down", lower)] {
-            if let Some((to, b)) = step {
-                let m = requantized(model, to, b / cur);
-                out.extend(row(
-                    format!("quant {dir} ({to})"),
+        for (to, b) in [higher, lower].into_iter().flatten() {
+            let m = requantized(model, to, b / cur);
+            out.extend(
+                row(
+                    (*to).to_owned(),
                     &m,
                     hw,
                     gpu,
@@ -213,8 +219,12 @@ pub fn compute(
                     Some(format!(
                         "size estimated from {b:.2} bpw; plan the real file to confirm"
                     )),
-                ));
-            }
+                )
+                .map(|a| Alternative {
+                    estimated: true,
+                    ..a
+                }),
+            );
         }
     }
 
@@ -227,7 +237,7 @@ pub fn compute(
                 && p.placement.is_full(model.n_layer)
             {
                 out.extend(row(
-                    format!("no offload ({ctx})"),
+                    format!("ctx {ctx}"),
                     model,
                     hw,
                     gpu,
@@ -247,7 +257,10 @@ pub fn compute(
         && let Some(m) = &model.mmproj
         && (!base.placement.is_full(model.n_layer)
             || base.kv == crate::KvType::Q4_0
-            || base.warnings.iter().any(|w| w.starts_with("tight on RAM")))
+            || base
+                .warnings
+                .iter()
+                .any(|w| w.is(crate::WarningKind::TightRam)))
     {
         let r = PlanRequest {
             mmproj_offload: false,

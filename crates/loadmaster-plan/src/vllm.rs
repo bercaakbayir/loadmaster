@@ -69,7 +69,7 @@ pub(crate) fn plan(
     hw: &HwSnapshot,
     gpu: &Gpu,
     req: &PlanRequest,
-    mut warnings: Vec<String>,
+    mut warnings: Vec<crate::Warning>,
 ) -> Result<Plan, Error> {
     let unavailable = |reason: String| Error::RuntimeUnavailable {
         runtime: "vllm",
@@ -101,15 +101,19 @@ pub(crate) fn plan(
         .unwrap_or(1);
     let used = &all[..tp];
     if tp < all.len() {
-        warnings.push(format!(
-            "vLLM's tensor-parallel size must divide the {} attention heads: using {tp} of {} GPUs; set CUDA_VISIBLE_DEVICES to the ones you want",
-            model.n_head,
-            all.len()
+        warnings.push(crate::Warning::new(
+            format!("vLLM: using {tp} of {} GPUs", all.len()),
+            format!(
+                "the tensor-parallel size must divide the {} attention heads; set CUDA_VISIBLE_DEVICES to the ones you want",
+                model.n_head
+            ),
         ));
     }
     if used.iter().any(|g| g.total_bytes != used[0].total_bytes) {
-        warnings
-            .push("vLLM sizes every GPU in a tensor-parallel group like the smallest one".into());
+        warnings.push(crate::Warning::new(
+            "vLLM sizes every GPU like the smallest",
+            "one fraction of memory applies to every GPU in a tensor-parallel group",
+        ));
     }
     // --gpu-memory-utilization is one fraction of each GPU's total; the tightest GPU sets it.
     let util_x100 = used
@@ -225,6 +229,11 @@ pub(crate) fn plan(
         return Err(Error::CannotFit(Box::new(NoFit {
             model: summary(model),
             gpu: gpu.clone(),
+            gpus: if used.len() > 1 {
+                used.iter().map(|g| (*g).clone()).collect()
+            } else {
+                Vec::new()
+            },
             ctx: upper,
             limit: "gpu",
             short_by,
@@ -263,9 +272,10 @@ pub(crate) fn plan(
         ),
     };
     if kv == KvType::Fp8 && req.kv.is_none() {
-        warnings.push(
-            "fp8 KV cache: small quality cost; needs a GPU with fp8 support for best speed".into(),
-        );
+        warnings.push(crate::Warning::new(
+            "fp8 KV cache: small quality cost",
+            "needs a GPU with fp8 support for best speed",
+        ));
     }
     terms.push(Term {
         key: "kv",

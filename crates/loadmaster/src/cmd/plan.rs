@@ -36,10 +36,12 @@ pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
                     "{}",
                     serde_json::to_string_pretty(&JsonOut::Fits { plan: &p })?
                 );
+            } else if args.command {
+                println!("{}", loadmaster_plan::emit::command(&p));
             } else if args.explain {
-                print!("{}", explain::explain(&p));
+                crate::ui::print(&explain::explain(&p, crate::ui::style()));
             } else {
-                print!("{}", explain::summary(&p));
+                crate::ui::print(&explain::summary(&p, crate::ui::style()));
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -49,8 +51,8 @@ pub fn run(args: PlanArgs) -> anyhow::Result<ExitCode> {
                     "{}",
                     serde_json::to_string_pretty(&JsonOut::CannotFit { no_fit: &n })?
                 );
-            } else {
-                print!("{}", explain::no_fit(&n, args.explain));
+            } else if !args.command {
+                crate::ui::print(&explain::no_fit(&n, args.explain, crate::ui::style()));
             }
             Ok(ExitCode::from(1))
         }

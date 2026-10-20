@@ -62,7 +62,11 @@ fn fit(m: &ModelInfo, hw: &HwSnapshot, gpu: Option<&Gpu>, ctx: u32) -> (Fit, Opt
     };
     match loadmaster_plan::plan(m, hw, gpu, &req) {
         Ok(p) => {
-            let caveat = if p.warnings.iter().any(|w| w.starts_with("tight on RAM")) {
+            let caveat = if p
+                .warnings
+                .iter()
+                .any(|w| w.is(loadmaster_plan::WarningKind::TightRam))
+            {
                 Some(Caveat::TightRam)
             } else if p.kv == KvType::Q4_0 {
                 Some(Caveat::Q4Kv)

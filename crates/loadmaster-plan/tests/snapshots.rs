@@ -15,8 +15,8 @@ fn render(model: &str, hw: FakeHw, ctx: Option<u32>, kv: Option<KvType>) -> Stri
         ..PlanRequest::default()
     };
     match plan(&m, &hw.0, &gpu, &req) {
-        Ok(p) => explain::explain(&p),
-        Err(Error::CannotFit(n)) => explain::no_fit(&n, true),
+        Ok(p) => explain::explain(&p, explain::Style::PLAIN),
+        Err(Error::CannotFit(n)) => explain::no_fit(&n, true, explain::Style::PLAIN),
         Err(e) => panic!("{e}"),
     }
 }
@@ -139,7 +139,7 @@ fn summary_output() {
         },
     )
     .unwrap();
-    insta::assert_snapshot!(explain::summary(&p));
+    insta::assert_snapshot!(explain::summary(&p, explain::Style::PLAIN));
 }
 
 #[test]
@@ -155,7 +155,11 @@ fn incomplete_download_warns() {
     m.complete = false;
     let hw = FakeHw::rtx_4090();
     let p = plan(&m, &hw.0, &hw.0.gpus[0], &PlanRequest::default()).unwrap();
-    assert!(p.warnings.iter().any(|w| w.contains("incomplete download")));
+    assert!(
+        p.warnings
+            .iter()
+            .any(|w| w.short.contains("incomplete download"))
+    );
 }
 
 #[test]

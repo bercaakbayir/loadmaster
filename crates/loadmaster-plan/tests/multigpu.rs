@@ -89,7 +89,7 @@ fn different_cards_warn_about_cuda_order() {
     assert!(
         p.warnings
             .iter()
-            .any(|w| w.contains("CUDA_DEVICE_ORDER=PCI_BUS_ID"))
+            .any(|w| w.short.contains("CUDA_DEVICE_ORDER=PCI_BUS_ID"))
     );
     // The smaller card is not filled past its own budget.
     let d = &p.footprint.per_device;
@@ -122,5 +122,9 @@ fn vllm_uses_tensor_parallel() {
     };
     let p = plan(&m, &hw, &hw.gpus[0], &req).unwrap();
     assert!(p.argv.join(" ").contains("--tensor-parallel-size 2"));
-    assert!(p.warnings.iter().any(|w| w.contains("using 2 of 3 GPUs")));
+    assert!(
+        p.warnings
+            .iter()
+            .any(|w| w.short.contains("using 2 of 3 GPUs"))
+    );
 }

@@ -20,5 +20,5 @@ BALANCE  all 36 layers and the output head on GPU
 COMMAND
   vllm serve fixtures/hf/Qwen3-8B-AWQ --max-model-len 32768 --gpu-memory-utilization 0.91
 
-alternatives:
-  more context (40960)     11.70 GiB ( +0.00 GiB)  all on GPU, fp8 KV                     full GPU speed
+Other options:
+  ctx 40960  11.7 GiB  all on GPU, fp8 KV  full GPU speed

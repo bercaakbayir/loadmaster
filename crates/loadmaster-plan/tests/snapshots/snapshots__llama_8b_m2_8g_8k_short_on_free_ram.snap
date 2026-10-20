@@ -2,13 +2,15 @@
 source: crates/loadmaster-plan/tests/snapshots.rs
 expression: "render(LLAMA_8B, FakeHw::m2_8g(), Some(8192), None)"
 ---
-Meta Llama 3.1 8B Instruct · llama · Q4_K_M · 32 layers  ·  ctx 8192
-does not fit: 1.48 GiB short on free RAM (unified memory: GPU and CPU share 8.00 GiB)
-cheapest fixes:
+Meta Llama 3.1 8B Instruct  ·  Q4_K_M  ·  32 layers  ·  ctx 8192
+
+✗ Doesn't fit: 1.5 GiB short on free RAM (GPU and CPU share 8.0 GiB)
+
+Try:
   - free 1.48 GiB of host memory held by other processes (4.00 GiB in use)
   - use a quant at least 1.48 GiB smaller than Q4_K_M (4.82 GiB)
 
-WEIGHT   closest configuration
+WEIGHT   Meta Llama 3.1 8B Instruct · llama · Q4_K_M · 32 layers, closest configuration
   weights              0.00 GiB   nothing on GPU; token embeddings 0.28 GiB stay on CPU
   KV cache             0.00 GiB   q8_0, no layers on GPU
   compute buffer       0.00 GiB   no layers on GPU

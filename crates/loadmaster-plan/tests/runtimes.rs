@@ -19,8 +19,8 @@ fn render(
         ..Default::default()
     };
     match plan(&model, &hw.0, &gpu, &req) {
-        Ok(p) => explain::explain(&p),
-        Err(Error::CannotFit(n)) => explain::no_fit(&n, true),
+        Ok(p) => explain::explain(&p, explain::Style::PLAIN),
+        Err(Error::CannotFit(n)) => explain::no_fit(&n, true, explain::Style::PLAIN),
         Err(e) => format!("error: {e}"),
     }
 }
@@ -63,7 +63,7 @@ fn vllm_llama_bf16_3060_cannot_fit() {
         Runtime::Vllm,
         None,
     );
-    assert!(out.contains("does not fit"), "{out}");
+    assert!(out.contains("✗ Doesn't fit"), "{out}");
     assert!(out.contains("smaller quant"), "{out}");
 }
 

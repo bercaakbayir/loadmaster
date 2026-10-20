@@ -26,9 +26,9 @@ BALANCE  all 48 layers and the output head on GPU, routed experts of the first 2
 COMMAND
   llama-server -m fixtures/gguf/qwen3-30b-a3b/Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 49 --n-cpu-moe 22 -fa on -ctk q8_0 -ctv q8_0 -np 1 --jinja
 
-alternatives:
-  more context (40960)     11.63 GiB ( +0.11 GiB)  experts of 23 layers on CPU, q8_0 KV   2.3-5.0x slower (estimate)
-  quant up (Q5_K_M)        11.54 GiB ( +0.02 GiB)  experts of 26 layers on CPU, q8_0 KV   2.5-5.5x slower (estimate)
-                         size estimated from 5.70 bpw; plan the real file to confirm
-  quant down (Q3_K_M)      11.49 GiB ( -0.03 GiB)  experts of 15 layers on CPU, q8_0 KV   1.9-3.6x slower (estimate)
-                         size estimated from 3.91 bpw; plan the real file to confirm
+Other options:
+  ctx 40960   11.6 GiB  experts of 23 layers on CPU, q8_0 KV  2.3-5.0x slower
+  Q5_K_M     ~11.5 GiB  experts of 26 layers on CPU, q8_0 KV  2.5-5.5x slower
+             size estimated from 5.70 bpw; plan the real file to confirm
+  Q3_K_M     ~11.5 GiB  experts of 15 layers on CPU, q8_0 KV  1.9-3.6x slower
+             size estimated from 3.91 bpw; plan the real file to confirm

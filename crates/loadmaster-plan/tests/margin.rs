@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use loadmaster_hw::{FakeHw, HwSnapshot};
-use loadmaster_plan::{KvType, PlanRequest, UNIFIED_RAM_MARGIN_PCT, plan};
+use loadmaster_plan::{KvType, PlanRequest, UNIFIED_RAM_MARGIN_PCT, Warning, WarningKind, plan};
 
 fn with_available(mut hw: HwSnapshot, bytes: u64) -> HwSnapshot {
     hw.host.available_bytes = bytes;
@@ -20,8 +20,8 @@ fn at(ctx: Option<u32>) -> PlanRequest {
     }
 }
 
-fn tight(warnings: &[String]) -> bool {
-    warnings.iter().any(|w| w.starts_with("tight on RAM"))
+fn tight(warnings: &[Warning]) -> bool {
+    warnings.iter().any(|w| w.is(WarningKind::TightRam))
 }
 
 /// RAM a Qwen3 8B plan at 8192 needs on a 64 GB Mac.
@@ -37,8 +37,9 @@ fn warns_when_the_plan_only_just_fits() {
     let need = need_8k();
     let hw = with_available(FakeHw::m3_max_64g().0, need + need / 20);
     let p = plan(&model(QWEN3_8B), &hw, &hw.gpus[0], &at(Some(8192))).unwrap();
-    let w = p.warnings.iter().find(|w| w.starts_with("tight on RAM"));
-    let w = w.expect("a tight-on-RAM warning");
+    let w = p.warnings.iter().find(|w| w.is(WarningKind::TightRam));
+    let w = w.expect("a tight-on-RAM warning").to_string();
+    assert!(w.starts_with("tight on RAM"), "{w}");
     assert!(w.contains(&format!("{UNIFIED_RAM_MARGIN_PCT}%")), "{w}");
     assert!(
         w.contains("--ctx "),

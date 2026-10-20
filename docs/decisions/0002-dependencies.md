@@ -17,6 +17,7 @@ Pinned in `[workspace.dependencies]`; substituting any of these needs a new ADR.
 | HTTP client | `reqwest` with rustls | no OpenSSL dependency for static builds |
 | Hashing | `blake3` | chat-template hashes |
 | Errors | `thiserror` in libraries, `anyhow` in the binary | typed errors at crate boundaries |
+| Terminal colour | `anstream`, binary only (already built through `clap`) | drops styles when stdout is not a colour terminal, under `NO_COLOR`, and on old Windows consoles; libraries emit plain ANSI |
 | Tests | `insta`, `proptest` | snapshot outputs, arithmetic properties |
 
 Pending: Apple `recommendedMaxWorkingSetSize` needs Metal FFI (likely `objc2-metal`). It gets

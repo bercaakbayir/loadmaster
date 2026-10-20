@@ -18,7 +18,7 @@ BALANCE  all 36 layers and the output head on GPU
   KV cache FP16: f16 fits with every layer on GPU
   tried:
     fits all layers on GPU, f16 KV                          GPU   10.64 GiB  host    1.44 GiB
-  warning: ExLlamaV3 compute buffer is estimated with the llama.cpp formula; not yet validated
+  ! ExLlamaV3 compute buffer not validated: estimated with the llama.cpp formula
 
 COMMAND
   python3 main.py --config config.yml

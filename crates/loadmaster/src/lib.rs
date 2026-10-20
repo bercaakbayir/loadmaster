@@ -1,6 +1,7 @@
 //! `loadmaster` CLI (also installed as `lm`). Subcommands delegate to the library crates.
 
 mod cmd;
+mod ui;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -13,6 +14,10 @@ struct Cli {
     /// Increase log verbosity (logs go to stderr).
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Colour: `auto` (only on a terminal, and not under NO_COLOR), `always`, `never`.
+    #[arg(long, global = true, value_enum, default_value_t = Color::Auto)]
+    color: Color,
 
     #[command(subcommand)]
     command: Command,
@@ -291,6 +296,9 @@ struct PlanArgs {
     explain: bool,
     #[arg(long, conflicts_with = "explain")]
     json: bool,
+    /// Print only the launch command, on one line (nothing when the model does not fit).
+    #[arg(long, conflicts_with_all = ["explain", "json"])]
+    command: bool,
     /// Re-plan the models.lock entry named MODEL and write the new derived fields.
     #[arg(long)]
     update: bool,
@@ -298,6 +306,13 @@ struct PlanArgs {
     lock: PathBuf,
     #[command(flatten)]
     hw: HwArgs,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Color {
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -322,6 +337,12 @@ impl From<Runtime> for loadmaster_plan::Runtime {
 pub fn main() -> ExitCode {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
+    match cli.color {
+        Color::Auto => anstream::ColorChoice::Auto,
+        Color::Always => anstream::ColorChoice::Always,
+        Color::Never => anstream::ColorChoice::Never,
+    }
+    .write_global();
     match run(cli) {
         Ok(code) => code,
         Err(err) => {

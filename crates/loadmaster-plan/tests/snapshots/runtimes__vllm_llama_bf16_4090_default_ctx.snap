@@ -20,5 +20,5 @@ BALANCE  all 32 layers and the output head on GPU
 COMMAND
   vllm serve fixtures/hf/Meta-Llama-3.1-8B-Instruct --max-model-len 56800 --gpu-memory-utilization 0.94
 
-alternatives:
-  more context (65536)     23.33 GiB ( +0.00 GiB)  all on GPU, fp8 KV                     full GPU speed
+Other options:
+  ctx 65536  23.3 GiB  all on GPU, fp8 KV  full GPU speed

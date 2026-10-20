@@ -31,6 +31,9 @@ fn run_in(args: &[&str], home: &Path) -> Output {
         .env_remove("HF_HOME")
         .env_remove("HF_HUB_CACHE")
         .env_remove("OLLAMA_MODELS")
+        .env_remove("NO_COLOR")
+        .env_remove("CLICOLOR")
+        .env_remove("CLICOLOR_FORCE")
         .env("HOME", home)
         .output()
         .unwrap()
@@ -59,6 +62,35 @@ fn plan_prints_summary_and_command() {
         String::from_utf8_lossy(&o.stderr)
     );
     insta::assert_snapshot!(stdout(&o));
+}
+
+#[test]
+fn piped_output_is_plain_and_colour_is_opt_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let hw = hw_file(&dir, FakeHw::rtx_4090());
+    let hw = hw.to_str().unwrap();
+    let plan = ["plan", QWEN3_8B, "--hw-file", hw];
+    // The test harness is never a terminal: no styles, and the command on one line.
+    let out = stdout(&run(&plan));
+    assert!(!out.contains('\x1b'), "{out}");
+    let cmd = out.lines().find(|l| l.contains("llama-server")).unwrap();
+    assert!(cmd.trim_start().starts_with("llama-server") && !cmd.ends_with('\\'));
+
+    let always = stdout(&run(&[&plan[..], &["--color", "always"]].concat()));
+    assert!(always.contains("\x1b[1;32m✓ Fits"), "{always}");
+    let never = Command::new(env!("CARGO_BIN_EXE_loadmaster"))
+        .args(plan)
+        .current_dir(workspace())
+        .env("NO_COLOR", "1")
+        .env("HOME", workspace().join("target/no-such-home"))
+        .output()
+        .unwrap();
+    assert!(!stdout(&never).contains('\x1b'));
+
+    // --command: exactly the launch line, for scripts.
+    let only = stdout(&run(&[&plan[..], &["--command"]].concat()));
+    assert_eq!(only.lines().count(), 1, "{only}");
+    assert!(only.starts_with("llama-server -m "), "{only}");
 }
 
 #[test]
@@ -92,7 +124,7 @@ fn cannot_fit_exits_1() {
         hw.to_str().unwrap(),
     ]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(stdout(&o).contains("does not fit"), "{}", stdout(&o));
+    assert!(stdout(&o).contains("✗ Doesn't fit"), "{}", stdout(&o));
 
     let o = run(&[
         "plan",
@@ -455,7 +487,7 @@ fn pretend_plans_on_hardware_you_do_not_have() {
         String::from_utf8_lossy(&o.stderr)
     );
     assert!(
-        stdout(&o).contains("usable on NVIDIA GeForce RTX 4090 (pretend)"),
+        stdout(&o).contains("✓ Fits on RTX 4090 (pretend)"),
         "{}",
         stdout(&o)
     );
@@ -490,7 +522,7 @@ fn gpu_selection_splits_by_default_and_pins_one() {
     let out = stdout(&split);
     assert_eq!(split.status.code(), Some(0), "{out}");
     assert!(
-        out.contains("across 2 GPUs") && out.contains("--tensor-split"),
+        out.contains("Fits on 2× RTX 3060") && out.contains("--tensor-split"),
         "{out}"
     );
     let one = run(&[

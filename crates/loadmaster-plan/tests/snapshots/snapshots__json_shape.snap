@@ -104,7 +104,7 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
   "config_file": null,
   "alternatives": [
     {
-      "label": "more context (16384)",
+      "label": "ctx 16384",
       "ctx": 16384,
       "quant": "Q4_K_M",
       "fits": true,
@@ -115,7 +115,7 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
       "note": null
     },
     {
-      "label": "quant up (Q5_K_M)",
+      "label": "Q5_K_M",
       "ctx": 8192,
       "quant": "Q5_K_M",
       "fits": true,
@@ -123,10 +123,11 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
       "delta_bytes": 815764593,
       "placement": "all on GPU, f16 KV",
       "slowdown_x100": null,
-      "note": "size estimated from 5.70 bpw; plan the real file to confirm"
+      "note": "size estimated from 5.70 bpw; plan the real file to confirm",
+      "estimated": true
     },
     {
-      "label": "quant down (Q3_K_M)",
+      "label": "Q3_K_M",
       "ctx": 8192,
       "quant": "Q3_K_M",
       "fits": true,
@@ -134,7 +135,8 @@ expression: "serde_json::to_string_pretty(&p).unwrap()"
       "delta_bytes": -986974443,
       "placement": "all on GPU, f16 KV",
       "slowdown_x100": null,
-      "note": "size estimated from 3.91 bpw; plan the real file to confirm"
+      "note": "size estimated from 3.91 bpw; plan the real file to confirm",
+      "estimated": true
     }
   ]
 }

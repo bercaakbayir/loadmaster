@@ -22,6 +22,7 @@ loadmaster-probe = { path = "crates/loadmaster-probe", version = "0.3.0" }
 
 # See docs/decisions/0002-dependencies.md before adding or substituting.
 anyhow = "1.0"
+anstream = "1.0"
 axum = "0.8"
 blake3 = "1.8"
 clap = { version = "4.6", features = ["derive"] }

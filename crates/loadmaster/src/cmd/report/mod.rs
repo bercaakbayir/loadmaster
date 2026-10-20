@@ -216,7 +216,7 @@ fn unified_refusal(plan: &Plan) -> Option<String> {
     }
     plan.warnings
         .iter()
-        .any(|w| w.starts_with("tight on RAM"))
+        .any(|w| w.is(loadmaster_plan::WarningKind::TightRam))
         .then(|| {
             format!(
                 "this plan leaves under {UNIFIED_RAM_MARGIN_PCT}% of free RAM unused; on unified memory running out can freeze or restart the machine. Use a smaller --ctx, close apps, or pass --unsafe-unified"

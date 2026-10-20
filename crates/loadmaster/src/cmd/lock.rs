@@ -149,7 +149,14 @@ fn entry(
             )))
         }
         Err(PlanError::CannotFit(n)) => {
-            eprint!("skipping {name}: {}", explain::no_fit(&n, false));
+            eprintln!(
+                "skipping {name}: doesn't fit, {} short{}",
+                explain::gib1(n.short_by),
+                n.fixes
+                    .first()
+                    .map(|f| format!("; {}", f.summary))
+                    .unwrap_or_default()
+            );
             Ok(None)
         }
         Err(e) => {
@@ -297,7 +304,7 @@ pub fn update(args: PlanArgs) -> anyhow::Result<ExitCode> {
     let p = match loadmaster_plan::plan(&m, &snap, &gpu, &req) {
         Ok(p) => p,
         Err(PlanError::CannotFit(n)) => {
-            print!("{}", explain::no_fit(&n, args.explain));
+            crate::ui::print(&explain::no_fit(&n, args.explain, crate::ui::style()));
             return Ok(ExitCode::from(1));
         }
         Err(e) => return Err(e.into()),

@@ -28,6 +28,14 @@ Run `loadmaster report` on your hardware to add a measured point (ADR 0009).
 
 `loadmaster report` on a vision model records the real buffers.
 
+## Model search (loadmaster's own)
+
+- `suggest` shows the Hub's parameter count, which for packed formats (NVFP4, some AWQ)
+  counts packed values: a 35B model can show as 18B and rank lower than it should.
+- GGUFs using ggml types newer than loadmaster's table (seen: 40 and 42 in NVIDIA Nemotron
+  3.5 builds) are counted as unreadable, as are image and speech models.
+- A first run downloads tens of MB of headers; see [docs/suggest.md](suggest.md).
+
 ## Multi-GPU (loadmaster's own)
 
 - Split plans assume a full-size compute buffer on every GPU and do not model pipeline

@@ -69,6 +69,23 @@ The outputs below are real runs on `--pretend` hardware with `hf://` headers, tr
 can paste any of them without a GPU or a download. The `probe` and `report` outputs come from
 loadmaster's fake runtime, so their numbers are illustrative.
 
+**Not sure what to run?** `suggest` searches the Hugging Face Hub for models that run here,
+best fit first ([docs/suggest.md](docs/suggest.md)):
+
+```console
+$ lm suggest --pretend "rtx 4090" --ctx 32768
+Models for RTX 4090 (pretend), 23.5 GiB usable  ·  llama.cpp  ·  ctx 32768  ·  trending GGUF on Hugging Face
+
+MODEL                                        PARAMS  QUANT            SIZE  FIT      CTX      TOK/S
+unsloth/Qwen3.6-35B-A3B-GGUF                  34.7B  UD-Q4_K_XL   20.8 GiB  ~gpu   32768   ~124-196
+openbmb/MiniCPM-V-4.7-35B-A3B-gguf            34.7B  Q4_1         20.3 GiB  ~gpu   32768   ~125-199
+unsloth/Qwen3.8-27B-GGUF                      27.3B  UD-Q5_K_XL   19.4 GiB  ~gpu   32768     ~33-40
+...
+exact plan: loadmaster plan hf://unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf
+```
+
+`lm suggest qwen`, `--kind vision|embed`, `--runtime vllm` and `--sort downloads` narrow it.
+
 **Find what you already have.** `scan` reads the HF cache, Ollama and LM Studio:
 
 ```console
@@ -220,6 +237,7 @@ same way tomorrow.
 | `loadmaster gpu [--json] [--pretend HW\|list]` | GPUs and usable memory (NVML, Apple unified memory), or a pretend one |
 | `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain\|--json\|--command]` | Memory budget, the exact launch command, alternatives |
 | `loadmaster plan hf://org/repo[/file.gguf] [--offline]` | The same from Hub headers only; a bare GGUF repo compares every quant |
+| `loadmaster suggest [QUERY] [--kind chat\|vision\|embed] [--runtime vllm]` | Hub models that run on this machine, best fit first |
 | `loadmaster init <names…\|--all>` / `add <model>` | Write `models.lock` with frozen flags and footprints |
 | `loadmaster plan <name> --update` | Re-plan one lockfile entry and show the diff |
 | `loadmaster up [--verify]` / `down` / `swap <name>` / `status` | Serve every model on one OpenAI-compatible port, evicting by footprint |
@@ -295,6 +313,7 @@ cargo xtask fetch-headers && cargo xtask validate
 
 ## Docs
 
+[finding models](docs/suggest.md) ·
 [speed estimates](docs/speed.md) ·
 [several GPUs](docs/multi-gpu.md) ·
 [vision and embedding models](docs/vision-embeddings.md) ·

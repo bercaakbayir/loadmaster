@@ -95,6 +95,12 @@ All notable changes to this project are documented here. The format follows
   directories.
 - `report` prints a predicted-vs-observed summary instead of the whole file; `--show` prints
   the file too (ADR 0010 amended).
+- `loadmaster suggest [QUERY]`: models on the Hugging Face Hub that run on this machine, best
+  fit first, searched live (ADR 0014, docs/suggest.md). Known publishers by default
+  (`--any-publisher` for all), one repo per base model, size checks before any header is
+  downloaded, `--kind`, `--runtime vllm`, `--sort`, `--offline`, `--json`.
+- `plan hf://org/repo` no longer lists `imatrix` and `MTP/mtp-*` files as quants, and reads
+  `fp16` in file names.
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

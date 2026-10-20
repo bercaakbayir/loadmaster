@@ -21,6 +21,21 @@ const GGUF_LIMIT: u64 = 256 << 20;
 const ST_HEADER_LIMIT: u64 = 100 << 20;
 /// How long a branch's file list is trusted; a commit hash never changes.
 const TREE_TTL: Duration = Duration::from_secs(24 * 3600);
+/// How long a search's results are reused.
+const SEARCH_TTL: Duration = Duration::from_secs(3600);
+/// Fields `GET /api/models` returns per model; with `expand[]` it returns only these
+/// and `id` (checked against the live API, 2026-10-20; ADR 0014).
+const SEARCH_EXPAND: [&str; 9] = [
+    "downloads",
+    "trendingScore",
+    "createdAt",
+    "tags",
+    "pipeline_tag",
+    "baseModels",
+    "gguf",
+    "safetensors",
+    "gated",
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -36,6 +51,10 @@ pub enum Error {
     Http { url: String, reason: String },
     #[error("{url}: {reason}")]
     Format { url: String, reason: String },
+    #[error(
+        "{0}: Hugging Face rate limit reached; set HF_TOKEN for a higher limit, or retry in a few minutes"
+    )]
+    RateLimited(String),
     #[error("{0}: not in the local cache and --offline was given")]
     Offline(String),
     #[error("cache {}: {reason}", path.display())]
@@ -80,6 +99,99 @@ impl Spec {
             repo: format!("{org}/{name}"),
             rev,
             file,
+        })
+    }
+}
+
+/// A Hub model search (`GET /api/models`), newest-first or most-popular-first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Search {
+    /// Tags every result carries (`gguf`, `image-text-to-text`); the Hub ANDs them.
+    pub filters: Vec<String>,
+    /// Matched loosely against the repo id.
+    pub text: Option<String>,
+    /// `trendingScore`, `downloads` or `createdAt`, always descending.
+    pub sort: &'static str,
+    pub limit: u32,
+}
+
+/// One search result: what the listing says about a repo, before any file is read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HubModel {
+    pub id: String,
+    pub downloads: u64,
+    pub trending: f64,
+    pub created: Option<String>,
+    /// Gated repos need an accepted licence and a token.
+    pub gated: bool,
+    pub pipeline: Option<String>,
+    pub tags: Vec<String>,
+    /// The model this one quantizes or fine-tunes, when the Hub records it.
+    pub base: Option<String>,
+    /// Parameter count (the Hub's `gguf.total` or `safetensors.total`).
+    pub params: Option<u64>,
+    /// GGUF architecture, when the Hub parsed one.
+    pub arch: Option<String>,
+    /// Safetensors parameter counts by dtype (`BF16`, `I32`, ...).
+    pub dtypes: Vec<(String, u64)>,
+}
+
+impl HubModel {
+    /// One entry of the `/api/models` response.
+    pub fn from_json(v: &serde_json::Value) -> Option<HubModel> {
+        let id = v.get("id")?.as_str()?.to_owned();
+        let str_of = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_owned);
+        let tags: Vec<String> = v
+            .get("tags")
+            .and_then(|t| t.as_array())
+            .map(|t| {
+                t.iter()
+                    .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let base = v
+            .pointer("/baseModels/models/0/id")
+            .and_then(|x| x.as_str())
+            .map(str::to_owned)
+            .or_else(|| {
+                tags.iter().find_map(|t| {
+                    t.strip_prefix("base_model:quantized:")
+                        .or_else(|| t.strip_prefix("base_model:finetune:"))
+                        .map(str::to_owned)
+                })
+            });
+        let dtypes: Vec<(String, u64)> = v
+            .pointer("/safetensors/parameters")
+            .and_then(|p| p.as_object())
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(k, n)| Some((k.clone(), n.as_u64()?)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(HubModel {
+            downloads: v.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0),
+            trending: v
+                .get("trendingScore")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.0),
+            created: str_of("createdAt"),
+            // `false`, or the kind of gate (`"auto"`, `"manual"`).
+            gated: v.get("gated").is_some_and(|g| g.as_bool() != Some(false)),
+            pipeline: str_of("pipeline_tag"),
+            base,
+            params: v
+                .pointer("/gguf/total")
+                .or_else(|| v.pointer("/safetensors/total"))
+                .and_then(|x| x.as_u64()),
+            arch: v
+                .pointer("/gguf/architecture")
+                .and_then(|x| x.as_str())
+                .map(str::to_owned),
+            dtypes,
+            tags,
+            id,
         })
     }
 }
@@ -165,6 +277,7 @@ impl Hub {
             200..=299 => Ok(resp),
             401 | 403 => Err(Error::Gated(url.to_owned())),
             404 => Err(Error::NotFound(url.to_owned())),
+            429 => Err(Error::RateLimited(url.to_owned())),
             status => Err(Error::Status {
                 url: url.to_owned(),
                 status,
@@ -244,6 +357,59 @@ impl Hub {
         let json = serde_json::to_vec(&files).expect("serialisable");
         Self::write_cache(&cached, &json)?;
         Ok(files)
+    }
+
+    /// Search the Hub's model listing. Results are cached for an hour, and any cached
+    /// result is used with `--offline`.
+    pub fn search(&self, q: &Search) -> Result<Vec<HubModel>, Error> {
+        let mut params: Vec<(&str, String)> =
+            q.filters.iter().map(|f| ("filter", f.clone())).collect();
+        if let Some(t) = &q.text {
+            params.push(("search", t.clone()));
+        }
+        params.push(("sort", q.sort.to_owned()));
+        params.push(("limit", q.limit.to_string()));
+        params.extend(SEARCH_EXPAND.iter().map(|e| ("expand[]", (*e).to_owned())));
+        let base = format!("{}/api/models", self.endpoint);
+        let url = reqwest::Url::parse_with_params(&base, &params).map_err(|e| Error::Http {
+            url: base.clone(),
+            reason: e.to_string(),
+        })?;
+        let key: String = url
+            .query()
+            .unwrap_or_default()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        let cached = self.cache.join(".search").join(format!("{key}.json"));
+        let ttl = if self.offline { None } else { Some(SEARCH_TTL) };
+        let body = match Self::read_cache(&cached, ttl) {
+            Some(b) => b,
+            None if self.offline => {
+                return Err(Error::Offline(format!(
+                    "search {}",
+                    q.text.as_deref().unwrap_or("(popular models)")
+                )));
+            }
+            None => {
+                let resp = self.get(url.as_str(), None)?;
+                let b = resp.bytes().map_err(|e| Error::Http {
+                    url: url.to_string(),
+                    reason: e.to_string(),
+                })?;
+                Self::write_cache(&cached, &b)?;
+                b.to_vec()
+            }
+        };
+        let v: serde_json::Value = serde_json::from_slice(&body).map_err(|e| Error::Format {
+            url: url.to_string(),
+            reason: e.to_string(),
+        })?;
+        let list = v.as_array().ok_or_else(|| Error::Format {
+            url: url.to_string(),
+            reason: "expected a JSON list of models".into(),
+        })?;
+        Ok(list.iter().filter_map(HubModel::from_json).collect())
     }
 
     /// A GGUF file's header (metadata and tensor table), truncated to where tensor data
@@ -536,6 +702,41 @@ pub fn fetch_gguf_header(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_results_parse_the_expanded_fields() {
+        // Shapes as the live API returned them on 2026-10-20 (values shortened).
+        let v: serde_json::Value = serde_json::from_str(
+            r#"[
+              {"_id":"x","id":"unsloth/Qwen3.8-27B-GGUF","downloads":120345,"trendingScore":88,
+               "createdAt":"2026-09-01T00:00:00.000Z","gated":false,"pipeline_tag":"text-generation",
+               "tags":["gguf","base_model:quantized:Qwen/Qwen3.8-27B"],
+               "baseModels":{"relation":"quantized","models":[{"_id":"y","id":"Qwen/Qwen3.8-27B"}]},
+               "gguf":{"total":27320697856,"architecture":"qwen35","context_length":262144}},
+              {"_id":"z","id":"Qwen/Qwen3-8B-AWQ","gated":"auto",
+               "tags":["safetensors","base_model:quantized:Qwen/Qwen3-8B"],
+               "safetensors":{"parameters":{"I32":1048576000,"F16":800000000},"total":1848576000}},
+              {"_id":"w"}
+            ]"#,
+        )
+        .unwrap();
+        let m: Vec<HubModel> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(HubModel::from_json)
+            .collect();
+        assert_eq!(m.len(), 2, "an entry without an id is dropped");
+        assert_eq!(m[0].base.as_deref(), Some("Qwen/Qwen3.8-27B"));
+        assert_eq!(m[0].params, Some(27320697856));
+        assert_eq!(m[0].arch.as_deref(), Some("qwen35"));
+        assert!(!m[0].gated);
+        assert_eq!(m[1].base.as_deref(), Some("Qwen/Qwen3-8B"), "from the tag");
+        assert!(m[1].gated, "a gate kind counts as gated");
+        assert_eq!(m[1].params, Some(1848576000));
+        assert_eq!(m[1].dtypes.len(), 2);
+        assert_eq!(m[1].downloads, 0);
+    }
 
     #[test]
     fn parses_specs() {

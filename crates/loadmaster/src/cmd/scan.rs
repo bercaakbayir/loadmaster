@@ -102,7 +102,7 @@ struct Row<'a> {
     source: &'a Source,
     size_bytes: u64,
     arch: Option<&'a str>,
-    /// `chat`, `vision` (chat with a projector) or `embed`.
+    /// `chat`, `vision`, `audio` or `omni` (chat with a projector), or `embed`.
     kind: Option<&'static str>,
     quant: Option<String>,
     n_ctx_train: Option<u32>,
@@ -144,15 +144,7 @@ pub fn run(
                 source: &e.source,
                 size_bytes: e.size_bytes,
                 arch: info.map(|m| m.arch.as_str()),
-                kind: info.map(|m| {
-                    if m.is_embedding() {
-                        "embed"
-                    } else if m.mmproj.is_some() {
-                        "vision"
-                    } else {
-                        "chat"
-                    }
-                }),
+                kind: info.map(ModelInfo::kind_label),
                 quant: info.map(|m| m.quant.to_string()),
                 n_ctx_train: info.map(|m| m.n_ctx_train),
                 mmproj: info

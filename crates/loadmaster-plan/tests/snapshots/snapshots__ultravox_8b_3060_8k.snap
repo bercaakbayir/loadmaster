@@ -1,0 +1,33 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(ULTRAVOX_8B, FakeHw::rtx_3060_12g(), Some(8192), None)"
+---
+WEIGHT   Meta Llama 3.1 8B Instruct · llama · Q4_K_M · 32 layers
+  weights              4.54 GiB   32/32 layers + output head 0.40 GiB; token embeddings 0.28 GiB stay on CPU
+  KV cache             1.00 GiB   f16: 32 layers x 8192 cells x (K 1024 + V 1024) x 2 B
+  compute buffer       0.13 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 8192 + peak of FFN 16 B x n_ubatch 512 x ffn 14336; flash attention
+  projector            1.30 GiB   1.30 GiB weights + one 30 s clip: 187 tokens (3000 mel frames / stack 8 / 2, ultravox projector) x n_embd 4096 x 2 B
+  audio compute        0.13 GiB   estimate, unvalidated: 16 MiB + mask 2 B x 1500^2 frames + peak of FFN 16 B x frames x ffn 5120 and attention (width 1280); flash attention (llama.cpp's default)
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
+  ------------------------------
+  GPU total            7.89 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  weights on CPU       0.28 GiB   token embeddings
+  compute on CPU       0.04 GiB   mask 2 B x n_ubatch 512 x ctx 8192 + 16 B x n_ubatch x n_embd 4096
+  host total           0.31 GiB   of 24.00 GiB available host memory
+
+BALANCE  all 32 layers and the output head on GPU
+  ctx 8192: requested with --ctx
+  KV cache f16: f16 fits with every layer on GPU
+  flash attention on: required for a quantised V cache and smaller compute buffers
+  tried:
+    fits all layers on GPU, f16 KV                          GPU    7.89 GiB  host    0.31 GiB
+
+COMMAND
+  llama-server -m fixtures/gguf/ultravox-llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf --mmproj fixtures/gguf/ultravox-llama-3.1-8b/mmproj-ultravox-v0_5-llama-3_1-8b-f16.gguf -c 8192 -ngl 33 -fa on -np 1 --jinja
+
+Other options:
+  ctx 16384   8.9 GiB  all on GPU, f16 KV  full GPU speed
+  Q5_K_M     ~8.6 GiB  all on GPU, f16 KV  full GPU speed
+             size estimated from 5.70 bpw; plan the real file to confirm
+  Q3_K_M     ~7.0 GiB  all on GPU, f16 KV  full GPU speed
+             size estimated from 3.91 bpw; plan the real file to confirm

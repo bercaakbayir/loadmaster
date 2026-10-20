@@ -89,14 +89,13 @@ fn summary(info: &ModelInfo) -> String {
     )
     .unwrap();
     match &info.mmproj {
-        Some(m) => writeln!(
-            s,
-            "mmproj: {} {} tokens ({})",
-            gib(m.weight_bytes),
-            m.n_img_tokens,
-            m.img_tokens_basis
-        )
-        .unwrap(),
+        Some(m) => {
+            let encoders: Vec<String> = m
+                .encoders()
+                .map(|e| format!(" {} tokens ({})", e.n_tokens, e.tokens_basis))
+                .collect();
+            writeln!(s, "mmproj: {}{}", gib(m.weight_bytes), encoders.join(";")).unwrap()
+        }
         None => writeln!(s, "mmproj: none").unwrap(),
     }
     writeln!(s, "complete: {}", info.complete).unwrap();
@@ -137,6 +136,10 @@ fixture_test!(
     "deepseek-v2-lite/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
 );
 fixture_test!(gpt_oss_20b, "gpt-oss-20b/gpt-oss-20b-mxfp4.gguf");
+fixture_test!(
+    ultravox_llama_3_1_8b,
+    "ultravox-llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+);
 
 #[test]
 fn mmproj_is_not_a_model() {

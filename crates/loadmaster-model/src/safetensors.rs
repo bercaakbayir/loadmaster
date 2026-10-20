@@ -571,9 +571,9 @@ impl ModelInfo {
             let p = crate::vision::Projector {
                 kind: "config.json".into(),
                 known: true,
-                n_img_tokens: tokens,
+                n_tokens: tokens,
                 tokens_basis: basis.clone(),
-                warmup_patches: side * side,
+                warmup_positions: side * side,
                 n_embd,
                 n_head: u("num_attention_heads", (n_embd / 64).max(1)),
                 n_ff: u("intermediate_size", n_embd * 4),
@@ -581,12 +581,11 @@ impl ModelInfo {
             Mmproj {
                 path: dir.clone(),
                 weight_bytes: vision_bytes,
-                n_img_tokens: tokens,
-                img_tokens_basis: basis,
-                projector: p.kind.clone(),
-                projector_known: true,
-                compute_bytes: p.compute_bytes(),
-                compute_basis: crate::info::compute_basis(&p),
+                vision: Some(crate::info::Encoder {
+                    tokens_basis: basis,
+                    ..crate::info::Encoder::new(&p, "patches")
+                }),
+                audio: None,
             }
         });
 

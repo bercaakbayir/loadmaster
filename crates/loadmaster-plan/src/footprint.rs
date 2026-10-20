@@ -104,7 +104,7 @@ pub struct Config {
     pub kv: KvType,
     pub flash_attn: bool,
     pub headroom: Headroom,
-    /// The vision projector's weights and encoder on the GPU (llama.cpp's default;
+    /// The projector's weights and encoders on the GPU (llama.cpp's default;
     /// `--no-mmproj-offload` keeps them on the CPU).
     pub mmproj_on_gpu: bool,
     /// Usable bytes of each GPU when splitting layers across several (llama.cpp
@@ -262,28 +262,52 @@ fn kv_width(model: &ModelInfo) -> (u64, u64) {
 
 pub fn mmproj(model: &ModelInfo) -> Option<Term> {
     let m = model.mmproj.as_ref()?;
-    let embeddings = u64::from(m.n_img_tokens) * u64::from(model.n_embd) * 2;
+    // llama.cpp encodes one image or audio chunk at a time: the larger output buffer.
+    let inputs: Vec<String> = [("one image", &m.vision), ("one 30 s clip", &m.audio)]
+        .into_iter()
+        .filter_map(|(what, e)| {
+            e.as_ref()
+                .map(|e| format!("{what}: {} tokens ({})", e.n_tokens, e.tokens_basis))
+        })
+        .collect();
+    let tokens = m.encoders().map(|e| e.n_tokens).max().unwrap_or(0);
+    let embeddings = u64::from(tokens) * u64::from(model.n_embd) * 2;
     Some(Term {
         key: "mmproj",
         bytes: m.weight_bytes + embeddings,
         detail: format!(
-            "{} weights + one image: {} tokens ({}) x n_embd {} x 2 B",
+            "{} weights + {} x n_embd {} x 2 B",
             gib(m.weight_bytes),
-            m.n_img_tokens,
-            m.img_tokens_basis,
+            inputs.join(" or "),
             model.n_embd
         ),
     })
 }
 
-/// The vision encoder's compute buffer (an upper-bound estimate; ADR 0011).
-pub fn vision_compute(model: &ModelInfo) -> Option<Term> {
-    let m = model.mmproj.as_ref()?;
-    (m.compute_bytes > 0).then(|| Term {
-        key: "vision_compute",
-        bytes: m.compute_bytes,
-        detail: m.compute_basis.clone(),
-    })
+/// The encoders' compute buffers (upper-bound estimates; ADR 0011, ADR 0015). Each encoder
+/// of a projector file reserves its own at warmup.
+pub fn encoder_compute(model: &ModelInfo) -> Vec<Term> {
+    let Some(m) = model.mmproj.as_ref() else {
+        return Vec::new();
+    };
+    [("vision_compute", &m.vision), ("audio_compute", &m.audio)]
+        .into_iter()
+        .filter_map(|(key, e)| {
+            e.as_ref().filter(|e| e.compute_bytes > 0).map(|e| Term {
+                key,
+                bytes: e.compute_bytes,
+                detail: e.compute_basis.clone(),
+            })
+        })
+        .collect()
+}
+
+/// The projector's weights and its encoders' compute buffers.
+fn projector_terms(model: &ModelInfo) -> Vec<Term> {
+    mmproj(model)
+        .into_iter()
+        .chain(encoder_compute(model))
+        .collect()
 }
 
 /// The full footprint of `model` under `placement` and `cfg`. `None` when `cfg.kv` is not
@@ -389,11 +413,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             .find(|t| t.key == "compute")
             .map_or(0, |t| t.bytes);
         let vision_bytes: u64 = if cfg.mmproj_on_gpu {
-            mmproj(model)
-                .into_iter()
-                .chain(vision_compute(model))
-                .map(|t| t.bytes)
-                .sum()
+            projector_terms(model).iter().map(|t| t.bytes).sum()
         } else {
             0
         };
@@ -449,10 +469,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             );
         }
     }
-    let vision: Vec<Term> = mmproj(model)
-        .into_iter()
-        .chain(vision_compute(model))
-        .collect();
+    let vision = projector_terms(model);
     let (vision_gpu, vision_cpu) = if cfg.mmproj_on_gpu {
         (vision, Vec::new())
     } else {
@@ -502,10 +519,10 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
     ));
     for t in vision_cpu {
         host.push(Term {
-            key: if t.key == "mmproj" {
-                "mmproj_cpu"
-            } else {
-                "vision_compute_cpu"
+            key: match t.key {
+                "mmproj" => "mmproj_cpu",
+                "audio_compute" => "audio_compute_cpu",
+                _ => "vision_compute_cpu",
             },
             detail: format!("{} (on CPU: --no-mmproj-offload)", t.detail),
             ..t

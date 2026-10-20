@@ -261,7 +261,7 @@ pub fn compute(
         }
     }
 
-    // A vision projector that crowds the GPU: keep it on the CPU instead (images then
+    // A projector that crowds the GPU: keep it on the CPU instead (images and audio then
     // encode on the CPU, slower, but the language model keeps the room).
     if req.runtime == Runtime::LlamaCpp
         && req.mmproj_offload
@@ -285,8 +285,13 @@ pub fn compute(
             &r,
             base,
             Some(format!(
-                "--no-mmproj-offload: frees {} of projector weights and encoder; images encode on the CPU",
-                crate::gib(m.weight_bytes + m.compute_bytes)
+                "--no-mmproj-offload: frees {} of projector weights and encoder; {} on the CPU",
+                crate::gib(m.weight_bytes + m.compute_bytes()),
+                match (m.vision.is_some(), m.audio.is_some()) {
+                    (true, true) => "images and audio encode",
+                    (false, true) => "audio encodes",
+                    _ => "images encode",
+                }
             )),
         ));
     }

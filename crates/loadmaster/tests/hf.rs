@@ -95,6 +95,19 @@ fn hub() -> Hub {
             ),
         ],
     );
+    repos.insert(
+        "ggml-org/ultravox-8b-GGUF".into(),
+        vec![
+            (
+                "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf".into(),
+                gguf("ultravox-llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"),
+            ),
+            (
+                "mmproj-ultravox-v0_5-llama-3_1-8b-f16.gguf".into(),
+                gguf("ultravox-llama-3.1-8b/mmproj-ultravox-v0_5-llama-3_1-8b-f16.gguf"),
+            ),
+        ],
+    );
     let awq = "Qwen3-8B-AWQ";
     repos.insert(
         "fx/Qwen3-8B-AWQ".into(),
@@ -155,6 +168,9 @@ fn hub() -> Hub {
         serde_json::json!({"id": "google/gemma-3-12b-GGUF", "tags": ["gguf", "image-text-to-text"],
             "baseModels": {"relation": "quantized", "models": [{"id": "fx/gemma-3-12b-it"}]},
             "gguf": {"total": 12_187_000_000u64, "architecture": "gemma3"}}),
+        serde_json::json!({"id": "ggml-org/ultravox-8b-GGUF", "tags": ["gguf", "audio-text-to-text"],
+            "baseModels": {"relation": "quantized", "models": [{"id": "fx/ultravox-8b"}]},
+            "gguf": {"total": 8_030_261_248u64, "architecture": "llama"}}),
         serde_json::json!({"id": "Qwen/huge-GGUF", "tags": ["gguf"], "gguf": {"total": 1_000_000_000_000u64}}),
         serde_json::json!({"id": "fx/private", "tags": ["gguf"], "gated": "manual"}),
         serde_json::json!({"id": "Qwen/Qwen3-8B-AWQ", "tags": ["safetensors", "text-generation"],
@@ -361,6 +377,26 @@ fn picks_up_the_projector_next_to_the_model() {
         )),
         "{out}"
     );
+    assert!(out.contains("on GPU, one image"), "{out}");
+
+    // An audio projector the same way, sized for one 30 s clip.
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[
+            &PLAN[..],
+            &["hf://ggml-org/ultravox-8b-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"],
+        ]
+        .concat(),
+    );
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    assert!(
+        out.contains("resolve/main/mmproj-ultravox-v0_5-llama-3_1-8b-f16.gguf"),
+        "{out}"
+    );
+    assert!(out.contains("on GPU, one 30 s clip"), "{out}");
 }
 
 #[test]
@@ -506,8 +542,9 @@ fn suggest_ranks_what_fits_and_explains_what_it_skipped() {
     let (code, out, err) = suggest(&url, home.path(), &[]);
     assert_eq!(code, Some(0), "{out}{err}");
     let rows = table_rows(&out);
-    assert_eq!(rows.len(), 2, "{out}");
-    // Biggest first: gemma 12B, then qwen3 8B (the duplicate and the 500 GB repo gone).
+    assert_eq!(rows.len(), 3, "{out}");
+    // Biggest first: gemma 12B, qwen3 8B, then the 8.0B audio model (the duplicate and the
+    // 500 GB repo gone).
     assert!(
         rows[0].starts_with("google/gemma-3-12b-GGUF") && rows[0].contains("12.2B"),
         "{out}"
@@ -516,9 +553,10 @@ fn suggest_ranks_what_fits_and_explains_what_it_skipped() {
         rows[1].starts_with("ggml-org/qwen3-8b-GGUF") && rows[1].contains("gpu"),
         "{out}"
     );
+    assert!(rows[2].starts_with("ggml-org/ultravox-8b-GGUF"), "{out}");
     assert!(
         out.contains(
-            "searched 6 repos · 1 too large · 1 duplicates · 1 by other publishers (--any-publisher) · 1 gated (set HF_TOKEN)"
+            "searched 7 repos · 1 too large · 1 duplicates · 1 by other publishers (--any-publisher) · 1 gated (set HF_TOKEN)"
         ),
         "{out}"
     );
@@ -532,7 +570,7 @@ fn suggest_ranks_what_fits_and_explains_what_it_skipped() {
     // Biggest first, and no further once enough fit on the GPU: the 8B is never planned.
     let (_, one, _) = suggest(&url, home.path(), &["--limit", "1"]);
     assert_eq!(table_rows(&one).len(), 1, "{one}");
-    assert!(one.contains("1 smaller, not needed"), "{one}");
+    assert!(one.contains("2 smaller, not needed"), "{one}");
 
     // Anyone's repos on request: the fine-tune joins (a different base model, so no dup).
     let (_, any, _) = suggest(&url, home.path(), &["--any-publisher"]);
@@ -552,6 +590,20 @@ fn suggest_filters_by_kind_and_runtime() {
     let rows = table_rows(&out);
     assert_eq!(rows.len(), 1, "{out}");
     assert!(rows[0].starts_with("google/gemma-3-12b-GGUF"), "{out}");
+
+    // Speech input: the audio projector decides, and speech-to-text is named as out of scope.
+    let (code, out, err) = suggest(&url, home.path(), &["--kind", "audio"]);
+    assert_eq!(code, Some(0), "{out}{err}");
+    let rows = table_rows(&out);
+    assert_eq!(rows.len(), 1, "{out}");
+    assert!(rows[0].starts_with("ggml-org/ultravox-8b-GGUF"), "{out}");
+    assert!(out.contains("Whisper and Parakeet"), "{out}");
+    let (code, _, err) = suggest(&url, home.path(), &["--kind", "audio", "--runtime", "vllm"]);
+    assert_ne!(code, Some(0));
+    assert!(
+        err.contains("--kind audio searches llama.cpp (GGUF) models only"),
+        "{err}"
+    );
 
     let (code, out, err) = suggest(&url, home.path(), &["--runtime", "vllm"]);
     assert_eq!(code, Some(0), "{out}{err}");

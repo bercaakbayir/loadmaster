@@ -13,7 +13,7 @@ Try:
 WEIGHT   gemma-3-12b-it · gemma3 · BF16 · 48 layers, closest configuration
   weights             21.92 GiB   every tensor on GPU (vLLM does not offload by default)
   activations          0.74 GiB   vLLM profiling reserve: 512 MiB + 20 MiB x 12.2B params
-  vision projector     0.78 GiB   0.78 GiB weights + one image: 256 tokens (mm_tokens_per_image in config.json) x n_embd 3840 x 2 B
+  projector            0.78 GiB   0.78 GiB weights + one image: 256 tokens (mm_tokens_per_image in config.json) x n_embd 3840 x 2 B
   headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB); outside --gpu-memory-utilization
 
 BALANCE  tried:

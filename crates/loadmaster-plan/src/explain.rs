@@ -100,10 +100,12 @@ fn label(key: &str) -> &'static str {
         "kv" => "KV cache",
         "compute" => "compute buffer",
         "activation" => "activations",
-        "mmproj" => "vision projector",
+        "mmproj" => "projector",
         "vision_compute" => "vision compute",
         "mmproj_cpu" => "projector on CPU",
         "vision_compute_cpu" => "vision compute CPU",
+        "audio_compute" => "audio compute",
+        "audio_compute_cpu" => "audio compute CPU",
         "headroom" => "headroom",
         "weights_cpu" => "weights on CPU",
         "kv_cpu" => "KV on CPU",
@@ -309,9 +311,23 @@ fn layers_line(p: &Plan) -> String {
     }
 }
 
-/// A vision projector's weights and encoder: where they go and what they take.
+/// A projector's weights and encoders: where they go, what they take, and the input they
+/// are sized for.
 fn projector_line(p: &Plan) -> Option<String> {
-    let sum = |terms: &[Term], keys: [&str; 2]| -> Option<u64> {
+    let has = |key: &str| {
+        let cpu = format!("{key}_cpu");
+        p.footprint
+            .gpu
+            .iter()
+            .chain(&p.footprint.host)
+            .any(|t| t.key == key || t.key == cpu)
+    };
+    let input = match (has("vision_compute"), has("audio_compute")) {
+        (true, true) => "one image or 30 s clip",
+        (false, true) => "one 30 s clip",
+        _ => "one image",
+    };
+    let sum = |terms: &[Term], keys: [&str; 3]| -> Option<u64> {
         let t: Vec<u64> = terms
             .iter()
             .filter(|t| keys.contains(&t.key))
@@ -319,11 +335,17 @@ fn projector_line(p: &Plan) -> Option<String> {
             .collect();
         (!t.is_empty()).then(|| t.iter().sum())
     };
-    if let Some(b) = sum(&p.footprint.gpu, ["mmproj", "vision_compute"]) {
-        Some(format!("{} on GPU, one image", gib1(b)))
+    if let Some(b) = sum(
+        &p.footprint.gpu,
+        ["mmproj", "vision_compute", "audio_compute"],
+    ) {
+        Some(format!("{} on GPU, {input}", gib1(b)))
     } else {
-        sum(&p.footprint.host, ["mmproj_cpu", "vision_compute_cpu"])
-            .map(|b| format!("{} on CPU (--no-mmproj-offload)", gib1(b)))
+        sum(
+            &p.footprint.host,
+            ["mmproj_cpu", "vision_compute_cpu", "audio_compute_cpu"],
+        )
+        .map(|b| format!("{} on CPU (--no-mmproj-offload)", gib1(b)))
     }
 }
 

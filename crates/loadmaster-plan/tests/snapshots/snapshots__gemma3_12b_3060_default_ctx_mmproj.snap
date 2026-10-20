@@ -6,7 +6,7 @@ WEIGHT   Gemma 3 12B It · gemma3 · Q4_K_M · 48 layers
   weights              6.94 GiB   48/48 layers + output head 0.53 GiB (tied: second copy of token embeddings); token embeddings 0.53 GiB stay on CPU
   KV cache             2.47 GiB   f16: 8 global layers x 32768 cells x (K 2048 + V 2048) + 40 sliding-window layers x 1536 cells (window 1024) x (K 2048 + V 2048), x 2 B
   compute buffer       0.37 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 32768 + peak of attention 12 B x n_ubatch 512 x (n_embd 3840 + q 4096 + k 2048 + v 2048) + 2 B x ctx 32768 x (k + v); flash attention
-  vision projector     0.79 GiB   0.78 GiB weights + one image: 256 tokens ((896/14)^2 patches / 4^2, gemma3 projector) x n_embd 3840 x 2 B
+  projector            0.79 GiB   0.78 GiB weights + one image: 256 tokens ((896/14)^2 patches / 4^2, gemma3 projector) x n_embd 3840 x 2 B
   vision compute       0.31 GiB   estimate, unvalidated: 16 MiB + mask 2 B x 4096^2 patches + peak of FFN 16 B x patches x ffn 4304 and attention (width 1152); flash attention (llama.cpp's default)
   headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
   ------------------------------

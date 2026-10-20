@@ -102,23 +102,47 @@ pub struct Layer {
     pub swa: bool,
 }
 
-/// A vision projector loaded alongside the model (`--mmproj`).
+/// A projector loaded alongside the model (`--mmproj`): one file holding a vision encoder,
+/// an audio encoder, or both (Qwen2.5-Omni, Gemma 4).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Mmproj {
     pub path: PathBuf,
     pub weight_bytes: u64,
-    /// Embeddings produced for one image.
-    pub n_img_tokens: u32,
-    /// How `n_img_tokens` was derived, for `--explain`.
-    pub img_tokens_basis: String,
-    /// `clip.projector_type` (`gemma3`, `qwen2.5vl_merger`, ...), or `config.json` for a
-    /// safetensors model's built-in vision tower.
+    pub vision: Option<Encoder>,
+    pub audio: Option<Encoder>,
+}
+
+/// One encoder of a projector file.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Encoder {
+    /// The projector type (`gemma3`, `qwen2.5vl_merger`, `ultravox`, ...), or `config.json`
+    /// for a safetensors model's built-in vision tower.
     pub projector: String,
     /// False when the projector type is not in loadmaster's table.
-    pub projector_known: bool,
-    /// Upper-bound estimate of the vision encoder's compute buffer (unvalidated).
+    pub known: bool,
+    /// Embeddings produced for one image or one 30 s audio clip.
+    pub n_tokens: u32,
+    /// How `n_tokens` was derived, for `--explain`.
+    pub tokens_basis: String,
+    /// Upper-bound estimate of the encoder's compute buffer (unvalidated).
     pub compute_bytes: u64,
     pub compute_basis: String,
+}
+
+impl Encoder {
+    pub(crate) fn new(p: &crate::vision::Projector, unit: &str) -> Self {
+        Encoder {
+            projector: p.kind.clone(),
+            known: p.known,
+            n_tokens: p.n_tokens,
+            tokens_basis: format!("{}, {} projector", p.tokens_basis, p.kind),
+            compute_bytes: p.compute_bytes(),
+            compute_basis: format!(
+                "estimate, unvalidated: 16 MiB + mask 2 B x {}^2 {unit} + peak of FFN 16 B x {unit} x ffn {} and attention (width {}); flash attention (llama.cpp's default)",
+                p.warmup_positions, p.n_ff, p.n_embd
+            ),
+        }
+    }
 }
 
 /// What a model is served for.
@@ -275,6 +299,24 @@ impl ModelInfo {
 
     pub fn is_embedding(&self) -> bool {
         matches!(self.kind, ModelKind::Embedding { .. })
+    }
+
+    /// `embed`, `vision`, `audio`, `omni` (vision and audio) or `chat`: what the model takes
+    /// in, for listings.
+    pub fn kind_label(&self) -> &'static str {
+        if self.is_embedding() {
+            return "embed";
+        }
+        match self
+            .mmproj
+            .as_ref()
+            .map(|m| (m.vision.is_some(), m.audio.is_some()))
+        {
+            Some((true, true)) => "omni",
+            Some((false, true)) => "audio",
+            Some(_) => "vision",
+            None => "chat",
+        }
     }
 
     /// False for encoders: llama.cpp allocates no KV cache, and an input must fit one
@@ -648,7 +690,7 @@ fn find_mmproj(path: &Path, model_files: &[PathBuf]) -> Result<Option<Mmproj>, E
 }
 
 impl Mmproj {
-    /// Read a vision projector GGUF (architecture `clip`).
+    /// Read a projector GGUF (architecture `clip`).
     pub fn open(path: &Path) -> Result<Self, Error> {
         Self::from_gguf(&Gguf::open(path)?, path)
     }
@@ -658,28 +700,26 @@ impl Mmproj {
         if g.get_str("general.architecture") != Some("clip") {
             return Err(Error::NotAModel {
                 path: path.to_path_buf(),
-                reason: "not a vision projector (architecture is not `clip`)".into(),
+                reason: "not a projector (architecture is not `clip`)".into(),
             });
         }
-        let p = crate::vision::Projector::from_gguf(g);
+        let (vision, audio) = crate::vision::modalities(g);
         Ok(Mmproj {
             weight_bytes: g.tensor_bytes(),
             path: path.to_path_buf(),
-            n_img_tokens: p.n_img_tokens,
-            img_tokens_basis: format!("{}, {} projector", p.tokens_basis, p.kind),
-            compute_bytes: p.compute_bytes(),
-            compute_basis: compute_basis(&p),
-            projector: p.kind,
-            projector_known: p.known,
+            vision: vision.then(|| Encoder::new(&crate::vision::Projector::vision(g), "patches")),
+            audio: audio.then(|| Encoder::new(&crate::vision::Projector::audio(g), "frames")),
         })
     }
-}
 
-pub(crate) fn compute_basis(p: &crate::vision::Projector) -> String {
-    format!(
-        "estimate, unvalidated: 16 MiB + mask 2 B x {}^2 patches + peak of FFN 16 B x patches x ffn {} and attention (width {}); flash attention (llama.cpp's default)",
-        p.warmup_patches, p.n_ff, p.n_embd
-    )
+    /// Both encoders' compute buffers: llama.cpp reserves one per encoder at warmup.
+    pub fn compute_bytes(&self) -> u64 {
+        self.encoders().map(|e| e.compute_bytes).sum()
+    }
+
+    pub fn encoders(&self) -> impl Iterator<Item = &Encoder> {
+        self.vision.iter().chain(self.audio.iter())
+    }
 }
 
 #[cfg(test)]

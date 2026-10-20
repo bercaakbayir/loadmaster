@@ -13,8 +13,8 @@ use std::path::PathBuf;
 
 pub use arch::{KvLayout, SwaPattern};
 pub use info::{
-    ChatTemplate, ENCODER_ARCHS, Format, Layer, Mmproj, ModelInfo, ModelKind, Pooling, Quant,
-    Source, mmproj_candidates, split_part_names,
+    ChatTemplate, ENCODER_ARCHS, Encoder, Format, Layer, Mmproj, ModelInfo, ModelKind, Pooling,
+    Quant, Source, mmproj_candidates, split_part_names,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -26,7 +26,7 @@ pub enum Error {
     )]
     MissingKey { path: PathBuf, key: String },
     #[error(
-        "{path}: is a vision projector (mmproj), not a model; pass the model file and loadmaster picks up the mmproj next to it"
+        "{path}: is a projector (mmproj), not a model; pass the model file and loadmaster picks up the mmproj next to it"
     )]
     IsProjector { path: PathBuf },
     #[error("{path}: split GGUF: {reason}")]

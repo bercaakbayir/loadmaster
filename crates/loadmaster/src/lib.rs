@@ -32,7 +32,7 @@ enum Command {
         path: Vec<PathBuf>,
         #[arg(long)]
         json: bool,
-        /// Also show architecture, training context, vision projector and chat template,
+        /// Also show architecture, training context, projector and chat template,
         /// and list every directory that was skipped.
         #[arg(long)]
         wide: bool,
@@ -298,7 +298,7 @@ struct PlanArgs {
     ctx: Option<u32>,
     #[arg(long, value_enum, default_value_t = Runtime::LlamaCpp)]
     runtime: Runtime,
-    /// Keep a vision model's projector on the CPU (llama.cpp `--no-mmproj-offload`).
+    /// Keep a vision or audio model's projector on the CPU (llama.cpp `--no-mmproj-offload`).
     #[arg(long)]
     no_mmproj_offload: bool,
     /// Print every term of the footprint and why each choice was made.
@@ -322,7 +322,8 @@ struct PlanArgs {
 struct SuggestArgs {
     /// Search term, matched against repo names (e.g. `qwen`, `gemma 12b`).
     query: Option<String>,
-    /// `chat` (text generation, vision models included), `vision` or `embed`.
+    /// `chat` (text generation, vision and audio models included), `vision`, `audio`
+    /// (speech input) or `embed`.
     #[arg(long, value_enum, default_value_t = SuggestKind::Chat)]
     kind: SuggestKind,
     /// llama.cpp searches GGUF repos and compares every quant; vllm searches safetensors.
@@ -363,6 +364,7 @@ struct SuggestArgs {
 enum SuggestKind {
     Chat,
     Vision,
+    Audio,
     Embed,
 }
 

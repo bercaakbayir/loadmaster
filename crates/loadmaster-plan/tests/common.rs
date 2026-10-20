@@ -11,6 +11,8 @@ pub const QWEN3_30B_A3B: &str = "qwen3-30b-a3b/Qwen3-30B-A3B-Q4_K_M.gguf";
 pub const GEMMA3_12B: &str = "gemma-3-12b/gemma-3-12b-it-Q4_K_M.gguf";
 pub const DSV2_LITE: &str = "deepseek-v2-lite/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf";
 pub const GPT_OSS_20B: &str = "gpt-oss-20b/gpt-oss-20b-mxfp4.gguf";
+/// Llama 3.1 8B with Ultravox's audio projector beside it.
+pub const ULTRAVOX_8B: &str = "ultravox-llama-3.1-8b/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf";
 pub const ALL: [&str; 6] = [
     QWEN3_8B,
     LLAMA_8B,

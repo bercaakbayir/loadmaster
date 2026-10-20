@@ -414,6 +414,42 @@ fn gemma3_mmproj() -> Vec<u8> {
     w.finish_header_only()
 }
 
+/// Ultravox v0.5's projector: a Whisper-large audio encoder (32 blocks, width 1280) and an
+/// MLP over 8 stacked frames, keys as in ggml-org/ultravox-v0_5-llama-3_2-1b-GGUF (header
+/// read 2026-10-20).
+fn ultravox_mmproj() -> Vec<u8> {
+    let mut w = GgufWriter::new();
+    w.kv("general.architecture", Value::String("clip".into()));
+    w.kv("clip.has_audio_encoder", Value::Bool(true));
+    w.kv("clip.audio.projection_dim", Value::U32(4096));
+    w.kv("clip.audio.embedding_length", Value::U32(1280));
+    w.kv("clip.audio.feed_forward_length", Value::U32(5120));
+    w.kv("clip.audio.block_count", Value::U32(32));
+    w.kv("clip.audio.attention.head_count", Value::U32(20));
+    w.kv("clip.projector_type", Value::String("ultravox".into()));
+    w.kv("clip.audio.num_mel_bins", Value::U32(128));
+    w.kv("clip.audio.projector.stack_factor", Value::U32(8));
+    let (e, f) = (1280, 5120);
+    w.tensor("a.conv1d.1.weight", &[3, 128, e], F16);
+    w.tensor("a.conv1d.2.weight", &[3, e, e], F16);
+    w.tensor("a.position_embd.weight", &[e, 1500], F32);
+    for il in 0..32 {
+        let b = |n: &str| format!("a.blk.{il}.{n}");
+        for n in ["attn_q", "attn_k", "attn_v", "attn_out"] {
+            w.tensor(&b(&format!("{n}.weight")), &[e, e], F16);
+            w.tensor(&b(&format!("{n}.bias")), &[e], F32);
+        }
+        w.tensor(&b("ffn_up.weight"), &[e, f], F16);
+        w.tensor(&b("ffn_down.weight"), &[f, e], F16);
+        w.tensor(&b("ln1.weight"), &[e], F32);
+        w.tensor(&b("ln2.weight"), &[e], F32);
+    }
+    w.tensor("a.post_ln.weight", &[e], F32);
+    w.tensor("mm.a.mlp.1.weight", &[e * 8, 4096], F16);
+    w.tensor("mm.a.mlp.2.weight", &[4096, 4096], F16);
+    w.finish_header_only()
+}
+
 pub fn generate(root: &Path, check: bool) -> anyhow::Result<()> {
     let mut files: Vec<(String, Vec<u8>)> = specs()
         .iter()
@@ -422,6 +458,19 @@ pub fn generate(root: &Path, check: bool) -> anyhow::Result<()> {
     files.push((
         "gguf/gemma-3-12b/mmproj-gemma-3-12b-it-F16.gguf".into(),
         gemma3_mmproj(),
+    ));
+    // Ultravox: Llama 3.1 8B with an audio projector beside it.
+    let llama = specs()
+        .into_iter()
+        .find(|s| s.dir == "llama-3.1-8b")
+        .context("llama-3.1-8b spec")?;
+    files.push((
+        format!("gguf/ultravox-llama-3.1-8b/{}", llama.file),
+        model(&llama),
+    ));
+    files.push((
+        "gguf/ultravox-llama-3.1-8b/mmproj-ultravox-v0_5-llama-3_1-8b-f16.gguf".into(),
+        ultravox_mmproj(),
     ));
     for dir in crate::hf_fixtures::dirs() {
         for (name, bytes) in dir.files {

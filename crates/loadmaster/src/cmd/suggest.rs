@@ -7,7 +7,6 @@ use std::process::ExitCode;
 use std::sync::{Condvar, Mutex};
 
 use loadmaster_hw::{Gpu, HwSnapshot, MemoryKind};
-use loadmaster_model::ModelInfo;
 use loadmaster_plan::{Error as PlanError, PlanRequest, explain};
 use loadmaster_store::remote::{Error as HubError, Hub, HubModel, Search, Spec};
 use serde::Serialize;
@@ -134,6 +133,9 @@ pub fn run(a: SuggestArgs) -> anyhow::Result<ExitCode> {
         );
     }
     let gguf = runtime == loadmaster_plan::Runtime::LlamaCpp;
+    if a.kind == SuggestKind::Audio && !gguf {
+        anyhow::bail!("--kind audio searches llama.cpp (GGUF) models only for now");
+    }
     let snap = super::snapshot(&a.hw)?;
     let (gpu, extra_gpus) = super::pick_gpus(&snap, &a.gpu)?;
     let gpus: Vec<&Gpu> = std::iter::once(&gpu).chain(&extra_gpus).collect();
@@ -273,6 +275,13 @@ fn search(hub: &Hub, a: &SuggestArgs, gguf: bool) -> anyhow::Result<Vec<HubModel
         SuggestKind::Chat if gguf => vec![None],
         SuggestKind::Chat => vec![Some("text-generation")],
         SuggestKind::Vision => vec![Some("image-text-to-text")],
+        // Speech-input chat models, omni models (Gemma 4, MiniCPM-o) and ASR ports; the
+        // projector header decides.
+        SuggestKind::Audio => vec![
+            Some("audio-text-to-text"),
+            Some("any-to-any"),
+            Some("automatic-speech-recognition"),
+        ],
         SuggestKind::Embed => vec![Some("feature-extraction"), Some("sentence-similarity")],
     };
     let sort = match a.sort {
@@ -387,20 +396,11 @@ fn rank(results: &mut [Suggestion]) {
     });
 }
 
-fn kind_of(m: &ModelInfo) -> &'static str {
-    if m.is_embedding() {
-        "embed"
-    } else if m.mmproj.is_some() {
-        "vision"
-    } else {
-        "chat"
-    }
-}
-
 fn kind_matches(want: SuggestKind, got: &str) -> bool {
     match want {
         SuggestKind::Chat => got != "embed",
-        SuggestKind::Vision => got == "vision",
+        SuggestKind::Vision => matches!(got, "vision" | "omni"),
+        SuggestKind::Audio => matches!(got, "audio" | "omni"),
         SuggestKind::Embed => got == "embed",
     }
 }
@@ -456,7 +456,7 @@ impl Job<'_> {
                 return Ok(Outcome::Failed);
             }
         }
-        let kind = kind_of(&rp.model);
+        let kind = rp.model.kind_label();
         if !kind_matches(self.kind, kind) {
             return Ok(Outcome::WrongKind);
         }
@@ -490,7 +490,7 @@ impl Job<'_> {
             return Ok(Outcome::Failed);
         }
         let model = self.hub.open_safetensors(&m.id, "main", &files)?;
-        let kind = kind_of(&model);
+        let kind = model.kind_label();
         if !kind_matches(self.kind, kind) {
             return Ok(Outcome::WrongKind);
         }
@@ -683,6 +683,12 @@ fn render(
             "only {fitting} of the {} repos considered run here; a search term (`loadmaster suggest 3b`) or --candidates 100 looks further",
             a.candidates
         )));
+        out.push('\n');
+    }
+    if a.kind == SuggestKind::Audio {
+        out.push_str(&style.dim(
+            "speech-to-text models such as Whisper and Parakeet run outside llama.cpp and are not planned",
+        ));
         out.push('\n');
     }
     if let Some(top) = results.iter().find(|r| r.fit != "no") {

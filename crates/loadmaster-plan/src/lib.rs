@@ -56,7 +56,7 @@ pub struct PlanRequest {
     pub kv: Option<KvType>,
     pub headroom: Option<u64>,
     pub n_ubatch: u32,
-    /// Put the vision projector on the GPU (llama.cpp's default).
+    /// Put the projector on the GPU (llama.cpp's default).
     pub mmproj_offload: bool,
     /// More GPUs to split the layers across, after the one passed to [`plan`]
     /// (llama.cpp `--split-mode layer`). Empty: one GPU.
@@ -205,7 +205,7 @@ pub struct Plan {
     /// uses (otherwise llama.cpp splits across every visible GPU).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<String>,
-    /// The vision projector stays on the CPU (`--no-mmproj-offload`).
+    /// The projector stays on the CPU (`--no-mmproj-offload`).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub mmproj_on_cpu: bool,
     /// Generation speed from memory bandwidth (llama.cpp only, when bandwidth is known).
@@ -960,12 +960,12 @@ fn no_fit(
     if s.mmproj_on_gpu
         && limit == "gpu"
         && let Some(m) = &model.mmproj
-        && m.weight_bytes + m.compute_bytes >= short_by
+        && m.weight_bytes + m.compute_bytes() >= short_by
     {
         fixes.push(Fix {
             summary: format!(
-                "keep the vision projector on the CPU with --no-mmproj-offload (frees {})",
-                gib(m.weight_bytes + m.compute_bytes)
+                "keep the projector on the CPU with --no-mmproj-offload (frees {})",
+                gib(m.weight_bytes + m.compute_bytes())
             ),
         });
     }

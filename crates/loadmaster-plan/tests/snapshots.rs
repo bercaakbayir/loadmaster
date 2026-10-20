@@ -90,6 +90,12 @@ case!(
     None
 );
 case!(
+    ultravox_8b_3060_8k,
+    ULTRAVOX_8B,
+    FakeHw::rtx_3060_12g(),
+    Some(8192)
+);
+case!(
     deepseek_v2_lite_4090_default_ctx,
     DSV2_LITE,
     FakeHw::rtx_4090(),

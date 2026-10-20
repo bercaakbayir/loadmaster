@@ -4,7 +4,7 @@ Status: accepted · 2026-10-18
 
 ## Context
 
-The build spec (`plan.md`) calls the tool `lx`. The project ships as **loadmaster**, after the
+The original build spec called the tool `lx`. The project ships as **loadmaster**, after the
 aircrew role that weighs the cargo, balances it within limits and signs off the preflight —
 the same three jobs the tool does for a local LLM (fit, placement, conformance).
 
@@ -21,7 +21,7 @@ the same three jobs the tool does for a local LLM (fit, placement, conformance).
   Environment variables use the `LOADMASTER_` prefix.
 - License: MIT OR Apache-2.0.
 
-Every reference to `lx`, `lx-*` or `~/.lx` in `plan.md` maps to the names above.
+Every `lx`, `lx-*` or `~/.lx` name in that spec maps to the names above.
 
 ## Consequences
 

@@ -344,7 +344,10 @@ fn a_bare_repo_compares_its_quants() {
         &[&PLAN[..], &["hf://fx/qwen3-8b-GGUF"]].concat(),
     );
     let out = text(&o).0;
-    assert!(out.contains("Q8_0") && out.contains("  *"), "{out}");
+    let q8 = out.lines().find(|l| l.starts_with("Q8_0")).unwrap();
+    assert!(q8.contains("~"), "an estimated row: {out}");
+    assert_eq!(out.matches("← best fit").count(), 1, "{out}");
+    assert!(out.contains("~ = planned from the Q4_K_M header"), "{out}");
     assert!(
         out.contains("loadmaster plan hf://fx/qwen3-8b-GGUF/"),
         "{out}"

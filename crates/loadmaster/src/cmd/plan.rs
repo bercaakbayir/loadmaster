@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use loadmaster_plan::{Error, PlanRequest, explain, gib};
+use loadmaster_plan::{Error, PlanRequest, explain};
 use serde::Serialize;
 
 use crate::PlanArgs;
@@ -187,6 +187,8 @@ fn repo_table(
     let model = hub.open_gguf(&spec.repo, &spec.rev, &base.file, files)?;
     let snap = super::snapshot(&args.hw)?;
     let (gpu, extra_gpus) = super::pick_gpus(&snap, &args.gpu)?;
+    let hw = explain::hw_label(&std::iter::once(&gpu).chain(&extra_gpus).collect::<Vec<_>>());
+    let usable: u64 = gpu.usable_bytes + extra_gpus.iter().map(|g| g.usable_bytes).sum::<u64>();
     let req = PlanRequest {
         ctx: args.ctx,
         runtime: args.runtime.into(),
@@ -234,7 +236,7 @@ fn repo_table(
                     None,
                     p.speed
                         .as_ref()
-                        .and_then(|s| s.at.first())
+                        .and_then(|s| s.at.last())
                         .map(|a| a.tok_s_x10),
                 ),
                 Err(Error::CannotFit(n)) => row(
@@ -262,77 +264,107 @@ fn repo_table(
             }))?
         );
     } else {
-        let fit_cell = |r: &RepoRow| match r.short_by {
-            Some(s) => format!("no, {} short", gib(s)),
-            None => r.fit.to_owned(),
+        let style = crate::ui::style();
+        // The largest quant that runs entirely on the GPU, else the smallest that runs.
+        let pick = rows
+            .iter()
+            .rposition(|r| r.fit == "gpu")
+            .or_else(|| rows.iter().position(|r| r.fit != "no"));
+        let fit_cell = |r: &RepoRow| {
+            let est = if r.exact { "" } else { "~" };
+            match r.short_by {
+                Some(s) => format!("✗ {est}{} short", explain::gib1(s)),
+                None => format!("{est}{}", r.fit),
+            }
+        };
+        let ctx_cell = |r: &RepoRow| {
+            if r.fit == "no" {
+                "-".to_owned()
+            } else {
+                r.ctx.to_string()
+            }
+        };
+        let speed = rows.iter().any(|r| r.tok_s_x10.is_some());
+        let tok_s = |r: &RepoRow| match r.tok_s_x10 {
+            Some(t) => format!(
+                "~{}",
+                loadmaster_plan::speed::band_text(t).trim_end_matches(" tok/s")
+            ),
+            None => "-".to_owned(),
         };
         let w = rows.iter().map(|r| r.quant.len()).max().unwrap_or(5).max(5);
         let fw = rows
             .iter()
-            .map(|r| fit_cell(r).len())
+            .map(|r| fit_cell(r).chars().count())
             .max()
             .unwrap_or(3)
-            .max(7);
-        println!(
-            "{} · {} quants · {} ({} usable)",
-            model.name.as_deref().unwrap_or(&spec.repo),
-            rows.len(),
-            gpu.name,
-            gib(gpu.usable_bytes)
-        );
-        let speed = rows.iter().any(|r| r.tok_s_x10.is_some());
-        let tok_s = |r: &RepoRow| match (speed, r.tok_s_x10) {
-            (false, _) => String::new(),
-            (true, Some(t)) => format!("  {:>15}", loadmaster_plan::speed::band_text(t)),
-            (true, None) => format!("  {:>15}", "-"),
+            .max(3);
+        let tw = if speed {
+            rows.iter()
+                .map(|r| tok_s(r).len())
+                .max()
+                .unwrap_or(5)
+                .max(5)
+        } else {
+            0
         };
-        println!(
-            "{:<w$}  {:>10}  {:<fw$}  {:>7}  {:<5} {:>10}{}",
-            "QUANT",
-            "SIZE",
-            "FIT",
-            "CTX",
-            "KV",
-            "GPU",
-            if speed {
-                format!("  {:>15}", "TOK/S (4k)")
-            } else {
-                String::new()
-            }
-        );
-        for r in &rows {
-            println!(
-                "{:<w$}  {:>10}  {:<fw$}  {:>7}  {:<5} {:>10}{}{}",
-                r.quant,
-                gib(r.size_bytes),
-                fit_cell(r),
-                if r.fit == "no" {
-                    "-".into()
-                } else {
-                    r.ctx.to_string()
-                },
-                r.kv.unwrap_or("-"),
-                gib(r.gpu_bytes),
-                tok_s(r),
-                if r.exact { "" } else { "  *" }
+        let mut out = String::new();
+        let line = |out: &mut String, cells: [&str; 6]| {
+            let mut l = format!(
+                "{:<w$}  {:>9}  {:<fw$}  {:>6}  {:<4}",
+                cells[0], cells[1], cells[2], cells[3], cells[4]
             );
-        }
-        println!(
-            "\n* estimated: the {} header scaled to that file's size",
-            base.label
-        );
-        // The largest quant that runs entirely on the GPU, else the smallest that runs.
-        let (why, pick) = match rows.iter().rev().find(|r| r.fit == "gpu") {
-            Some(r) => ("largest quant entirely on the GPU", r),
-            None => match rows.iter().find(|r| r.fit != "no") {
-                Some(r) => ("smallest quant, with CPU offload", r),
-                None => ("smallest quant", &rows[0]),
-            },
+            if speed {
+                l.push_str(&format!("  {:>tw$}", cells[5]));
+            }
+            out.push_str(l.trim_end());
         };
-        println!(
-            "exact plan for the {why}:\n  loadmaster plan hf://{}/{}",
-            spec.repo, pick.file
-        );
+        out.push_str(&format!(
+            "{}  ·  {} quants  ·  {hw}, {} usable\n\n",
+            style.bold(model.name.as_deref().unwrap_or(&spec.repo)),
+            rows.len(),
+            explain::gib1(usable)
+        ));
+        line(&mut out, ["QUANT", "SIZE", "FIT", "CTX", "KV", "TOK/S"]);
+        out.push('\n');
+        for (i, r) in rows.iter().enumerate() {
+            let size = explain::gib1(r.size_bytes);
+            let fit = fit_cell(r);
+            let ctx = ctx_cell(r);
+            let speed = tok_s(r);
+            let mut row = String::new();
+            line(
+                &mut row,
+                [&r.quant, &size, &fit, &ctx, r.kv.unwrap_or("-"), &speed],
+            );
+            if Some(i) == pick {
+                out.push_str(&style.bold(&format!("{row}  ← best fit")));
+            } else if r.fit == "no" {
+                out.push_str(&style.dim(&row));
+            } else {
+                out.push_str(&row);
+            }
+            out.push('\n');
+        }
+        out.push('\n');
+        if rows.iter().any(|r| !r.exact) {
+            out.push_str(&style.dim(&format!(
+                "~ = planned from the {} header, scaled to that file's size\n",
+                base.label
+            )));
+        }
+        let r = &rows[pick.unwrap_or(0)];
+        out.push_str(&format!(
+            "exact plan{}: loadmaster plan hf://{}/{}\n",
+            if pick.is_some() {
+                " for the best fit"
+            } else {
+                " for the smallest"
+            },
+            spec.repo,
+            r.file
+        ));
+        crate::ui::print(&out);
     }
     Ok(ExitCode::from(if any_fit { 0 } else { 1 }))
 }

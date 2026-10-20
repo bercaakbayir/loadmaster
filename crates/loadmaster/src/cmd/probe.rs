@@ -51,7 +51,7 @@ pub fn run(a: ProbeArgs) -> anyhow::Result<ExitCode> {
         if a.json {
             println!("{}", serde_json::to_string_pretty(&report)?);
         } else {
-            print!("{}", render(&report));
+            crate::ui::print(&render(&report, crate::ui::style()));
         }
         return Ok(ExitCode::from(report.exit_code()));
     }
@@ -84,7 +84,7 @@ pub fn run(a: ProbeArgs) -> anyhow::Result<ExitCode> {
     if a.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        print!("{}", render(&report));
+        crate::ui::print(&render(&report, crate::ui::style()));
         println!("captures: {}", capture.display());
     }
     Ok(ExitCode::from(report.exit_code()))
@@ -115,7 +115,7 @@ fn cell(r: &FixtureResult) -> (String, String) {
     }
 }
 
-pub fn render(r: &Report) -> String {
+pub fn render(r: &Report, style: crate::ui::Style) -> String {
     use std::fmt::Write;
     let mut o = String::new();
     writeln!(
@@ -139,7 +139,12 @@ pub fn render(r: &Report) -> String {
         } else {
             x.id.clone()
         };
-        writeln!(o, "  {id:<24} {state:<5} {detail}").unwrap();
+        let state = match &x.outcome {
+            Outcome::Pass => style.green(&format!("{state:<5}")),
+            Outcome::Fail(_) => style.red(&format!("{state:<5}")),
+            Outcome::Skip(_) => style.dim(&format!("{state:<5}")),
+        };
+        writeln!(o, "{}", format!("  {id:<24} {state} {detail}").trim_end()).unwrap();
     }
     let why = match r.verdict.as_str() {
         "pass" => "every fixture passed".to_owned(),
@@ -155,7 +160,12 @@ pub fn render(r: &Report) -> String {
         ),
         _ => format!("failures: {}", r.failures.join(", ")),
     };
-    writeln!(o, "verdict: {} ({why}); * = core fixture", r.verdict).unwrap();
+    let verdict = match r.verdict.as_str() {
+        "pass" => style.green(&r.verdict),
+        "partial" => style.yellow(&r.verdict),
+        _ => style.red(&r.verdict),
+    };
+    writeln!(o, "verdict: {verdict} ({why}); * = core fixture").unwrap();
     for k in &r.known_issues {
         writeln!(o, "known issue ({}): {} — {}", k.failure, k.url, k.note).unwrap();
     }

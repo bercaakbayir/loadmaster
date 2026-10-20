@@ -83,7 +83,7 @@ fn quant_label(file: &str) -> String {
         digit_after("Q")
             || digit_after("IQ")
             || digit_after("TQ")
-            || ["BF16", "F16", "F32", "MXFP4"].contains(&u.as_str())
+            || ["BF16", "F16", "F32", "FP16", "FP32", "MXFP4"].contains(&u.as_str())
     };
     match tokens.iter().position(|t| is_quant(t)) {
         Some(i) => {
@@ -102,13 +102,24 @@ fn quant_label(file: &str) -> String {
     }
 }
 
+/// GGUF files in model repos that are not the model: importance matrices
+/// (`imatrix_unsloth.gguf`) and multi-token-prediction draft heads (`MTP/mtp-*.gguf`).
+fn is_auxiliary(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    name.contains("imatrix") || name.starts_with("mtp-") || lower.starts_with("mtp/")
+}
+
 /// The GGUF quants in a repo listing, smallest first; split parts are summed into their
 /// first part, projectors and non-GGUF files skipped.
 pub(crate) fn repo_quants(files: &[loadmaster_store::remote::RemoteFile]) -> Vec<RepoQuant> {
     let mut quants: Vec<RepoQuant> = Vec::new();
     let projectors = loadmaster_model::mmproj_candidates(files.iter().map(|f| f.path.as_str()));
     for f in files {
-        if !f.path.ends_with(".gguf") || projectors.contains(&f.path.as_str()) {
+        if !f.path.ends_with(".gguf")
+            || projectors.contains(&f.path.as_str())
+            || is_auxiliary(&f.path)
+        {
             continue;
         }
         // `name-00002-of-00003.gguf` belongs to `name-00001-of-00003.gguf`.
@@ -413,6 +424,9 @@ mod tests {
             ("gpt-oss-20b-mxfp4.gguf", "mxfp4"),
             ("BF16/Qwen3-30B-A3B-BF16-00001-of-00002.gguf", "BF16"),
             ("Llama-3.2-1B-Instruct-IQ4_XS.gguf", "IQ4_XS"),
+            // Qwen's own naming: lower case, `fp16`.
+            ("qwen2.5-coder-7b-instruct-q4_k_m.gguf", "q4_k_m"),
+            ("qwen2.5-coder-7b-instruct-fp16-00001-of-00004.gguf", "fp16"),
             ("model.gguf", "model"),
         ] {
             assert_eq!(quant_label(file), label, "{file}");
@@ -431,6 +445,10 @@ mod tests {
             f("M-Q4_K_M.gguf", 10),
             f("mmproj-F16.gguf", 1),
             f("README.md", 1),
+            // Not models: an importance matrix and multi-token-prediction heads.
+            f("imatrix_unsloth.gguf", 1),
+            f("MTP/mtp-M-Q4_K_M.gguf", 2),
+            f("mtp-M-BF16.gguf", 3),
         ]);
         assert_eq!(
             q,

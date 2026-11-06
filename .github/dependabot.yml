@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # cargo-deny fails CI when a new advisory lands; this opens the fix PR.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

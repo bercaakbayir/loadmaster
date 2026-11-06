@@ -1,0 +1,46 @@
+name: Bug report
+description: Something loadmaster does wrong (a crash, a wrong number, a bad command).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A prediction that didn't hold on your hardware? The **Validation report** template is
+        better: `loadmaster report` fills it in for you.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The exact command and its full output (`--explain` or `--json` helps for plans).
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: gpu
+    attributes:
+      label: "`loadmaster gpu` output"
+      render: console
+  - type: input
+    id: version
+    attributes:
+      label: loadmaster version
+      description: "`loadmaster --version`"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and version (if relevant)
+      placeholder: llama.cpp b11669, vLLM 0.11, tabbyAPI ...
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 26, Ubuntu 24.04, Windows 11 ...

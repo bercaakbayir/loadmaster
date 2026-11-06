@@ -1,4 +1,12 @@
-# loadmaster
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/loadmaster-wordmark-dark.png">
+    <img src="docs/assets/loadmaster-wordmark.png" alt="loadmaster" width="276">
+  </picture>
+</h1>
+
+[![CI](https://github.com/bercaakbayir/loadmaster/actions/workflows/ci.yml/badge.svg)](https://github.com/bercaakbayir/loadmaster/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
 **Will this model fit on this machine at this context length, what is the exact command to run
 it, and does it actually emit tool calls?** loadmaster answers all three for local LLMs, from the
@@ -243,7 +251,7 @@ same way tomorrow.
 | Command | Does |
 |---|---|
 | `loadmaster scan [--path DIR] [--wide] [--json]` | Index the HF cache, Ollama, LM Studio and loose dirs (read-only), with fit at 8k/32k/128k |
-| `loadmaster gpu [--json] [--pretend HW\|list]` | GPUs and usable memory (NVML, Apple unified memory), or a pretend one |
+| `loadmaster gpu [--json] [--pretend HW\|list]` | GPUs and usable memory (NVML, Apple unified memory), or a pretend one (NVIDIA, AMD, Apple M1–M5) |
 | `loadmaster plan <model> [--ctx N] [--runtime llama.cpp\|vllm\|exl3] [--explain\|--json\|--command]` | Memory budget, the exact launch command, alternatives |
 | `loadmaster plan hf://org/repo[/file.gguf] [--offline]` | The same from Hub headers only; a bare GGUF repo compares every quant |
 | `loadmaster suggest [QUERY] [--kind chat\|vision\|audio\|embed] [--runtime vllm]` | Hub models that run on this machine, best fit first |
@@ -264,7 +272,10 @@ is honoured). Errors exit 3.
 ## How it works
 
 - **Plan.** GGUF and safetensors headers give exact per-layer bytes and KV dimensions
-  (GQA, sliding-window layers, MLA). The planner follows llama.cpp's own placement
+  (GQA, sliding-window layers, MLA, and hybrid models such as Qwen3.5 and Qwen3-Next, where
+  only the full-attention layers keep a KV cache and the rest a small fixed state). Files
+  loadmaster can't plan (image or video generation, encoder-decoder models) are named as
+  not supported rather than misread. The planner follows llama.cpp's own placement
   (`-ngl` offloads the output head, then the last layers; `--n-cpu-moe` keeps routed experts
   of the first layers on the CPU), prefers f16 KV, then q8_0, then q4_0 with a warning, then
   offloads experts before whole layers. On Apple Silicon a plan must fit in the RAM free
@@ -278,7 +289,9 @@ is honoured). Errors exit 3.
 - **Probe.** Ten declarative fixtures (tool calls single, parallel, nested, round-trip;
   strict, union and enum/pattern schemas; streamed tool calls; reasoning leaks; the chat
   template) run three times each against any OpenAI-compatible endpoint; failures are
-  classified (`call_in_content`, `schema_dropped_silent`, `stream_truncated`, …).
+  classified (`call_in_content`, `schema_dropped_silent`, `stream_truncated`, …), and a
+  runtime that rejects the model's output with its own parser error is reported as
+  `runtime_parse_error`, not blamed on the model.
   `up --verify` records the verdict in `models.lock`; `status` flags it stale when the
   runtime version changes.
 
@@ -289,11 +302,12 @@ fake OpenAI server, fake hardware). What is and is not validated against real ru
 
 | | Validated | Not yet |
 |---|---|---|
-| Weights and KV footprint | exact vs llama.cpp (28 runs, Apple M2, Metal) | NVIDIA/CUDA |
+| Weights and KV footprint | exact vs llama.cpp (29 runs on Apple M2 and M5 Pro, Metal, incl. a hybrid Qwen3.5) | NVIDIA/CUDA |
 | Compute buffer | never under, at most 1.33x over (same runs) | CUDA; MoE models |
 | Fit / OOM | [13/13 cases](docs/validation.md) on one M2 8 GB | the 30-case NVIDIA set; llmfit and `--fit` columns |
 | vLLM, exl3 plans | unit-tested | real runs |
 | Probe | every failure class reproduced on the fake runtime | [`RESULTS.md`](RESULTS.md) for 20 models (needs a 24 GB GPU) |
+| AMD GPUs | `--pretend` catalog (Radeon, Ryzen AI Max) | detection on a real AMD machine (ROCm) |
 | Docker, systemd, AUR, Windows | files written | built and run |
 
 Help close these with one command: `loadmaster report model.gguf --ctx 32768` runs the model
@@ -302,12 +316,24 @@ submit ([CONTRIBUTING.md](CONTRIBUTING.md)). Nothing is uploaded unless you subm
 
 ## Install
 
+From v0.3.0, prebuilt for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64, glibc)
+and Windows; every install gets both `loadmaster` and `lm`:
+
 ```sh
-cargo install loadmaster     # once published; until then:
-cargo install --path crates/loadmaster
+# Homebrew (macOS, Linux)
+brew install bercaakbayir/tap/loadmaster
+
+# Shell installer (macOS, Linux)
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercaakbayir/loadmaster/releases/latest/download/loadmaster-installer.sh | sh
+
+# PowerShell (Windows)
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/bercaakbayir/loadmaster/releases/latest/download/loadmaster-installer.ps1 | iex"
+
+# From source (Rust 1.85+)
+cargo install loadmaster
 ```
 
-Release binaries and a Homebrew formula come from cargo-dist (`dist-workspace.toml`).
+Binaries are also on the [releases page](https://github.com/bercaakbayir/loadmaster/releases).
 llama.cpp, vLLM or tabbyAPI are separate installs; loadmaster plans for them and runs them.
 
 ## Building
@@ -332,6 +358,14 @@ cargo xtask fetch-headers && cargo xtask validate
 [known issues](docs/known-issues.md) ·
 [design decisions](docs/decisions/) ·
 [changelog](CHANGELOG.md)
+
+## Contributing
+
+The most useful contribution needs no code: run `loadmaster report` on your hardware and
+submit the issue it prefills. For code, see [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and
+ideas go in [issues](https://github.com/bercaakbayir/loadmaster/issues); security problems go
+through [SECURITY.md](SECURITY.md), not a public issue. Everyone taking part follows the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -9,7 +9,7 @@ model). Extra signatures can be passed with `--known-issues FILE`.
 
 The list is empty: entries are added only for issues confirmed against a probe failure, with
 a link to the real upstream report. When `RESULTS.md` is first generated, each failure
-signature it shows should get an entry here (spec §9, v0.3.0).
+signature it shows should get an entry here.
 
 ## Models loadmaster does not plan (loadmaster's own)
 

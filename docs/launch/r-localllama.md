@@ -1,6 +1,6 @@
 # Draft: r/LocalLLaMA post
 
-Post within 48 hours of the next major open-weights release (spec 3.9), once RESULTS.md has
+Post within 48 hours of the next major open-weights release, once RESULTS.md has
 real numbers. Everything in [brackets] must come from RESULTS.md or docs/validation.md;
 delete any claim that does not have a number behind it.
 

@@ -6,8 +6,9 @@ Two files hold ground truth:
   `cargo test -p loadmaster-plan --test observed -- --ignored` replays them; weights and KV
   must match within 1 MiB, the compute buffer must not be underestimated. It also holds
   **incidents**: configurations that took a machine down, which the planner must refuse.
-- `validation/cases.toml`: whole runs, `fits` or `oom`, for the 30-case agreement table
-  (spec task 1.11). `cargo xtask validate --markdown` prints the table for the README.
+- `validation/cases.toml`: whole runs, `fits` or `oom`, for the agreement table (the goal is
+  30 cases across NVIDIA and Apple hardware). `cargo xtask validate --markdown` prints the
+  table for the README.
 
 Neither needs the model files: `cargo xtask fetch-headers` downloads just the GGUF header of
 every listed model (a few MB, by HTTP range request) into `validation/headers/`.

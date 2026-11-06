@@ -114,6 +114,8 @@ struct Row<'a> {
     /// What each fit costs, if anything.
     caveats: Option<[Option<Caveat>; 3]>,
     error: Option<&'a str>,
+    /// Why the model is not planned (image generation, speech-to-text), instead of `error`.
+    unsupported: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -156,7 +158,18 @@ pub fn run(
                 runtime: info.map(|m| runtime_for(m).name()),
                 fits: fits.map(|f| f.map(|(fit, _)| fit)),
                 caveats: fits.map(|f| f.map(|(_, c)| c)),
-                error: e.info.as_ref().err().map(String::as_str),
+                error: e
+                    .info
+                    .as_ref()
+                    .err()
+                    .filter(|_| !e.unsupported)
+                    .map(String::as_str),
+                unsupported: e
+                    .info
+                    .as_ref()
+                    .err()
+                    .filter(|_| e.unsupported)
+                    .map(String::as_str),
             }
         })
         .collect();
@@ -238,6 +251,10 @@ pub fn run(
             out.push('\n');
             if let Some(err) = r.error {
                 out.push_str(&format!("{:<name_w$}  error: {err}\n", ""));
+            }
+            if let Some(why) = r.unsupported {
+                out.push_str(&style.dim(&format!("{:<name_w$}  unsupported: {why}", "")));
+                out.push('\n');
             }
         }
         out.push('\n');

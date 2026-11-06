@@ -240,3 +240,69 @@ fn hf_missing_shard_is_reported() {
         "{err}"
     );
 }
+
+/// A diffusion GGUF as city96 / unsloth convert them: `general.architecture = flux` and no
+/// `flux.block_count`.
+fn flux_gguf() -> Vec<u8> {
+    let mut w = GgufWriter::new();
+    w.kv("general.architecture", Value::String("flux".into()));
+    w.tensor(
+        "double_blocks.0.img_attn.qkv.weight",
+        &[256, 768],
+        GgmlType::F16,
+    );
+    w.finish_with_data()
+}
+
+#[test]
+fn flux_gguf_is_unsupported_not_a_converter_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("flux2-dev-Q4_K_M.gguf");
+    std::fs::write(&path, flux_gguf()).unwrap();
+    let err = ModelInfo::open(&path).unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+    let msg = err.to_string();
+    assert!(
+        msg.ends_with("image generation model (flux): not supported, see docs/known-issues.md"),
+        "{msg}"
+    );
+    assert!(!msg.contains("converter"), "{msg}");
+}
+
+#[test]
+fn diffusers_dir_is_unsupported() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("model_index.json"),
+        r#"{"_class_name":"Flux2Pipeline","_diffusers_version":"0.36.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("flux2-dev.safetensors"), b"").unwrap();
+    let err = ModelInfo::open(dir.path()).unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+    assert!(
+        err.to_string()
+            .contains("image generation model (flux2): not supported"),
+        "{err}"
+    );
+}
+
+#[test]
+fn t5_config_is_unsupported() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("config.json"),
+        r#"{"architectures":["T5EncoderModel"],"model_type":"t5","num_layers":12}"#,
+    )
+    .unwrap();
+    // An empty safetensors header: 8-byte length, then `{}`.
+    let mut st = 2u64.to_le_bytes().to_vec();
+    st.extend_from_slice(b"{}");
+    std::fs::write(dir.path().join("model.safetensors"), st).unwrap();
+    let err = ModelInfo::open(dir.path()).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("encoder-decoder model (t5): not supported"),
+        "{err}"
+    );
+}

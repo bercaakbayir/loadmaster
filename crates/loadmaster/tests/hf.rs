@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Arc;
 
-use loadmaster_model::gguf::Gguf;
+use loadmaster_model::gguf::writer::GgufWriter;
+use loadmaster_model::gguf::{GgmlType, Gguf, Value};
 
 fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -145,6 +146,70 @@ fn hub() -> Hub {
                 size: 500 << 30,
             },
         )],
+    );
+    // An architecture loadmaster's table does not know, as when Qwen3.5 first shipped.
+    let mut w = GgufWriter::new();
+    w.kv("general.architecture", Value::String("qwen35".into()));
+    w.kv("qwen35.block_count", Value::U32(2));
+    w.kv("qwen35.context_length", Value::U32(4096));
+    w.kv("qwen35.embedding_length", Value::U32(256));
+    w.kv("qwen35.attention.head_count", Value::U32(4));
+    for (name, dims) in [
+        ("token_embd.weight", [256u64, 1000]),
+        ("blk.0.attn_q.weight", [256, 256]),
+        ("blk.1.attn_q.weight", [256, 256]),
+        ("output.weight", [256, 1000]),
+    ] {
+        w.tensor(name, &dims, GgmlType::F16);
+    }
+    let bytes = w.finish_with_data();
+    let size = bytes.len() as u64;
+    repos.insert(
+        "fx/qwen35-GGUF".into(),
+        vec![
+            ("Qwen3.5-Q4_K_M.gguf".into(), File { bytes, size }),
+            (
+                "Qwen3.5-Q8_0.gguf".into(),
+                File {
+                    bytes: Vec::new(),
+                    size: size * 17 / 10,
+                },
+            ),
+        ],
+    );
+    // Image generation: a diffusion GGUF repo and a diffusers repo.
+    let mut w = GgufWriter::new();
+    w.kv("general.architecture", Value::String("flux".into()));
+    w.tensor(
+        "double_blocks.0.img_attn.qkv.weight",
+        &[256, 768],
+        GgmlType::F16,
+    );
+    let bytes = w.finish_with_data();
+    let size = bytes.len() as u64;
+    repos.insert(
+        "fx/FLUX.2-dev-GGUF".into(),
+        vec![("flux2-dev-Q4_K_M.gguf".into(), File { bytes, size })],
+    );
+    let index = br#"{"_class_name":"Flux2Pipeline"}"#.to_vec();
+    repos.insert(
+        "fx/FLUX.2-dev".into(),
+        vec![
+            (
+                "model_index.json".into(),
+                File {
+                    size: index.len() as u64,
+                    bytes: index,
+                },
+            ),
+            (
+                "flux2-dev.safetensors".into(),
+                File {
+                    bytes: Vec::new(),
+                    size: 64 << 30,
+                },
+            ),
+        ],
     );
     // `suggest` lists known publishers only: the same fixtures under their names.
     for (alias, repo) in [
@@ -631,4 +696,71 @@ fn suggest_names_the_rate_limit() {
         err.contains("rate limit") && err.contains("HF_TOKEN"),
         "{err}"
     );
+}
+
+#[test]
+fn the_quant_table_shows_the_header_quants_warnings() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&PLAN[..], &["hf://fx/qwen35-GGUF"]].concat(),
+    );
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    assert_eq!(
+        out.matches("! architecture `qwen35` unknown").count(),
+        1,
+        "once, below the legend: {out}"
+    );
+    let legend = out.find("~ = planned from").unwrap();
+    assert!(out.find("! architecture").unwrap() > legend, "{out}");
+
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&PLAN[..], &["hf://fx/qwen35-GGUF", "--json"]].concat(),
+    );
+    let v: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
+    let w = v["warnings"].as_array().unwrap();
+    assert!(
+        w.iter().any(|w| w
+            .as_str()
+            .unwrap()
+            .starts_with("architecture `qwen35` unknown")),
+        "{v}"
+    );
+
+    // A known architecture has none.
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&PLAN[..], &["hf://fx/qwen3-8b-GGUF", "--json"]].concat(),
+    );
+    let v: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
+    assert_eq!(v["warnings"], serde_json::json!([]));
+}
+
+#[test]
+fn image_generation_repos_are_not_supported() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    for spec in [
+        "hf://fx/FLUX.2-dev-GGUF",
+        "hf://fx/FLUX.2-dev-GGUF/flux2-dev-Q4_K_M.gguf",
+        "hf://fx/FLUX.2-dev",
+    ] {
+        let o = run(&url, home.path(), None, &[&PLAN[..], &[spec]].concat());
+        let err = text(&o).1;
+        assert_ne!(o.status.code(), Some(0), "{spec}");
+        assert!(
+            err.contains("image generation model (flux") && err.contains("not supported"),
+            "{spec}: {err}"
+        );
+        assert!(!err.contains("converter"), "{spec}: {err}");
+    }
 }

@@ -63,6 +63,10 @@ pub struct Entry {
     /// The model's header, or why it could not be read.
     #[serde(skip)]
     pub info: Result<Box<ModelInfo>, String>,
+    /// `info` failed because the model is a kind loadmaster does not plan (image
+    /// generation, speech-to-text), not because the file is broken.
+    #[serde(skip)]
+    pub unsupported: bool,
 }
 
 impl Entry {
@@ -77,7 +81,9 @@ impl Entry {
                 }
                 Box::new(m)
             })
-            .map_err(|e| e.to_string());
+            .map_err(|e| (e.is_unsupported(), e.to_string()));
+        let unsupported = info.as_ref().is_err_and(|(u, _)| *u);
+        let info = info.map_err(|(_, e)| e);
         let size_bytes = match &info {
             Ok(m) => m
                 .files
@@ -94,6 +100,7 @@ impl Entry {
             size_bytes,
             mmproj,
             info,
+            unsupported,
         }
     }
 }
@@ -208,8 +215,12 @@ fn is_later_split_part(p: &Path) -> bool {
     }
 }
 
-/// A directory holding an HF model: `config.json` plus at least one `.safetensors`.
+/// A directory holding an HF model: `config.json` plus at least one `.safetensors`, or a
+/// diffusers pipeline (`model_index.json`), listed so the scan can say it is unsupported.
 fn is_hf_model_dir(dir: &Path) -> bool {
+    if !dir.join("config.json").exists() && dir.join("model_index.json").exists() {
+        return true;
+    }
     dir.join("config.json").exists()
         && sorted_dir(dir)
             .iter()

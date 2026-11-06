@@ -261,3 +261,46 @@ fn keeps_embedding_models_and_skips_classifiers() {
             .contains("GLiClassModel is neither a text-generation nor a sentence-transformers")
     }));
 }
+
+#[test]
+fn diffusion_models_are_unsupported_not_errors() {
+    use loadmaster_model::gguf::writer::GgufWriter;
+    use loadmaster_model::gguf::{GgmlType, Value};
+    let t = machine();
+    let hf = t.path().join("hf");
+    let gguf = hf.join("models--unsloth--FLUX.2-dev-GGUF/snapshots/r1");
+    std::fs::create_dir_all(&gguf).unwrap();
+    let mut w = GgufWriter::new();
+    w.kv("general.architecture", Value::String("flux".into()));
+    w.tensor(
+        "double_blocks.0.img_attn.qkv.weight",
+        &[256, 768],
+        GgmlType::F16,
+    );
+    std::fs::write(gguf.join("flux2-dev-Q4_K_M.gguf"), w.finish_with_data()).unwrap();
+    let diffusers = hf.join("models--black-forest-labs--FLUX.2-dev/snapshots/r1");
+    std::fs::create_dir_all(&diffusers).unwrap();
+    std::fs::write(
+        diffusers.join("model_index.json"),
+        r#"{"_class_name":"Flux2Pipeline"}"#,
+    )
+    .unwrap();
+    let s = scan(&roots(t.path()));
+    for name in ["FLUX.2-dev-GGUF", "black-forest-labs/FLUX.2-dev"] {
+        let e = s
+            .entries
+            .iter()
+            .find(|e| e.name.contains(name))
+            .unwrap_or_else(|| panic!("{name} not listed"));
+        assert!(e.unsupported, "{name}: {:?}", e.info.as_ref().err());
+        let err = e.info.as_ref().unwrap_err();
+        assert!(err.contains("image generation model (flux"), "{err}");
+    }
+    // Real models stay readable.
+    assert!(
+        s.entries
+            .iter()
+            .filter(|e| !e.unsupported)
+            .all(|e| e.info.is_ok())
+    );
+}

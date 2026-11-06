@@ -11,6 +11,15 @@ The list is empty: entries are added only for issues confirmed against a probe f
 a link to the real upstream report. When `RESULTS.md` is first generated, each failure
 signature it shows should get an entry here (spec §9, v0.3.0).
 
+## Models loadmaster does not plan (loadmaster's own)
+
+`plan` and `scan` say "not supported" for these, rather than reading them as broken files:
+
+- Image and video generation models: diffusion GGUFs (`flux`, `sd3`, `wan`, ...) and
+  diffusers repos (`model_index.json`, such as black-forest-labs/FLUX.2-dev).
+- Speech-to-text models (Whisper, Parakeet).
+- Encoder-decoder models (T5, BART), including sentence-transformers T5 such as gtr-t5.
+
 ## Speed estimates (loadmaster's own)
 
 - Bands are fitted to one model shape (7B, 32 layers) on llama.cpp; other sizes extrapolate.

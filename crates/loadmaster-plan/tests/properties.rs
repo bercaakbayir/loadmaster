@@ -20,7 +20,7 @@ proptest! {
 
     /// A plan always fits both budgets; otherwise the result is CannotFit.
     #[test]
-    fn fits_or_cannot_fit(model in 0usize..6, ctx in 256u32..=262_144, usable in 1024u64..=49_152, host in 1u64..=128) {
+    fn fits_or_cannot_fit(model in 0usize..common::ALL.len(), ctx in 256u32..=262_144, usable in 1024u64..=49_152, host in 1u64..=128) {
         let m = &common::all_models()[model];
         let snap = hw(usable, host);
         let req = PlanRequest { ctx: Some(ctx), ..Default::default() };
@@ -37,7 +37,7 @@ proptest! {
 
     /// More context never needs less memory for the same placement and KV type.
     #[test]
-    fn footprint_monotonic_in_ctx(model in 0usize..6, a in 256u32..=200_000, b in 256u32..=200_000, ngl in 0u32..=100, kv in 0usize..3) {
+    fn footprint_monotonic_in_ctx(model in 0usize..common::ALL.len(), a in 256u32..=200_000, b in 256u32..=200_000, ngl in 0u32..=100, kv in 0usize..3) {
         let m = &common::all_models()[model];
         let (lo, hi) = (a.min(b), a.max(b));
         let kv = KvType::ALL[kv];
@@ -51,7 +51,7 @@ proptest! {
 
     /// More context never moves more layers onto the GPU.
     #[test]
-    fn offload_monotonic_in_ctx(model in 0usize..6, a in 256u32..=200_000, b in 256u32..=200_000, usable in 4096u64..=32_768) {
+    fn offload_monotonic_in_ctx(model in 0usize..common::ALL.len(), a in 256u32..=200_000, b in 256u32..=200_000, usable in 4096u64..=32_768) {
         let m = &common::all_models()[model];
         let snap = hw(usable, 256);
         let (lo, hi) = (a.min(b), a.max(b));

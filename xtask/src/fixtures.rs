@@ -60,6 +60,18 @@ struct Mla {
     v_head: u64,
 }
 
+/// Qwen3.5 / Qwen3-Next: Gated DeltaNet layers, full attention every `interval`th layer.
+struct Hybrid {
+    interval: u32,
+    d_conv: u64,
+    /// Key and value head dim (`ssm.state_size`).
+    d_state: u64,
+    /// Key heads (`ssm.group_count`).
+    n_group: u64,
+    /// Value heads (`ssm.time_step_rank`).
+    dt_rank: u64,
+}
+
 struct Spec {
     dir: &'static str,
     file: &'static str,
@@ -81,6 +93,7 @@ struct Spec {
     swa_window: Option<u32>,
     moe: Option<Moe>,
     mla: Option<Mla>,
+    hybrid: Option<Hybrid>,
     template: &'static str,
 }
 
@@ -106,6 +119,7 @@ fn specs() -> Vec<Spec> {
         swa_window: None,
         moe: None,
         mla: None,
+        hybrid: None,
         template: CHATML,
     };
     vec![
@@ -241,6 +255,32 @@ fn specs() -> Vec<Spec> {
                 "Gpt Oss 20b",
             )
         },
+        // unsloth/Qwen3.5-0.8B-GGUF Qwen3.5-0.8B-Q4_K_M.gguf (header read 2026-11-06).
+        Spec {
+            n_layer: 24,
+            n_embd: 1024,
+            n_head: 8,
+            n_head_kv: 2,
+            head_dim: 256,
+            n_ff: 3584,
+            n_vocab: 248320,
+            n_ctx: 262144,
+            tied: true,
+            qk_norm: true,
+            hybrid: Some(Hybrid {
+                interval: 4,
+                d_conv: 4,
+                d_state: 128,
+                n_group: 16,
+                dt_rank: 16,
+            }),
+            ..dense(
+                "qwen3.5-0.8b",
+                "Qwen3.5-0.8B-Q4_K_M.gguf",
+                "qwen35",
+                "Qwen3.5-0.8B",
+            )
+        },
     ]
 }
 
@@ -299,6 +339,17 @@ fn model(s: &Spec) -> Vec<u8> {
         );
         w.kv(&k("rope.dimension_count"), Value::U32(m.rope as u32));
     }
+    if let Some(h) = &s.hybrid {
+        w.kv(&k("ssm.conv_kernel"), Value::U32(h.d_conv as u32));
+        w.kv(&k("ssm.state_size"), Value::U32(h.d_state as u32));
+        w.kv(&k("ssm.group_count"), Value::U32(h.n_group as u32));
+        w.kv(&k("ssm.time_step_rank"), Value::U32(h.dt_rank as u32));
+        w.kv(
+            &k("ssm.inner_size"),
+            Value::U32((h.d_state * h.dt_rank) as u32),
+        );
+        w.kv(&k("full_attention_interval"), Value::U32(h.interval));
+    }
     w.kv("tokenizer.chat_template", Value::String(s.template.into()));
 
     let e = s.n_embd;
@@ -310,8 +361,26 @@ fn model(s: &Spec) -> Vec<u8> {
     for il in 0..s.n_layer {
         let b = |n: &str| format!("blk.{il}.{n}");
         t(b("attn_norm.weight"), &[e], F32);
-        match &s.mla {
-            Some(m) => {
+        let recurrent = s
+            .hybrid
+            .as_ref()
+            .filter(|h| (u64::from(il) + 1) % u64::from(h.interval) != 0);
+        match (&s.mla, recurrent) {
+            // Gated DeltaNet, as llama.cpp src/models/qwen35.cpp creates its tensors.
+            (_, Some(h)) => {
+                let inner = h.d_state * h.dt_rank;
+                let conv = 2 * h.n_group * h.d_state + inner;
+                t(b("attn_qkv.weight"), &[e, conv], mix.main);
+                t(b("attn_gate.weight"), &[e, inner], mix.main);
+                t(b("ssm_conv1d.weight"), &[h.d_conv, conv], F32);
+                t(b("ssm_a"), &[h.dt_rank], F32);
+                t(b("ssm_dt.bias"), &[h.dt_rank], F32);
+                t(b("ssm_alpha.weight"), &[e, h.dt_rank], mix.main);
+                t(b("ssm_beta.weight"), &[e, h.dt_rank], mix.main);
+                t(b("ssm_norm.weight"), &[h.d_state], F32);
+                t(b("ssm_out.weight"), &[inner, e], mix.hi);
+            }
+            (Some(m), None) => {
                 let h = s.n_head;
                 t(b("attn_q.weight"), &[e, h * (m.qk_nope + m.rope)], mix.main);
                 t(
@@ -327,10 +396,12 @@ fn model(s: &Spec) -> Vec<u8> {
                 );
                 t(b("attn_output.weight"), &[h * m.v_head, e], mix.main);
             }
-            None => {
+            (None, None) => {
                 let q = s.n_head * s.head_dim;
                 let kv = s.n_head_kv * s.head_dim;
-                t(b("attn_q.weight"), &[e, q], mix.main);
+                // Qwen3.5 attention layers project a gate alongside the query.
+                let q_out = if s.hybrid.is_some() { 2 * q } else { q };
+                t(b("attn_q.weight"), &[e, q_out], mix.main);
                 t(b("attn_k.weight"), &[e, kv], mix.main);
                 t(b("attn_v.weight"), &[e, kv], mix.hi);
                 t(b("attn_output.weight"), &[q, e], mix.main);
@@ -347,7 +418,11 @@ fn model(s: &Spec) -> Vec<u8> {
             t(b("post_attention_norm.weight"), &[e], F32);
             t(b("post_ffw_norm.weight"), &[e], F32);
         }
-        t(b("ffn_norm.weight"), &[e], F32);
+        if s.hybrid.is_some() {
+            t(b("post_attention_norm.weight"), &[e], F32);
+        } else {
+            t(b("ffn_norm.weight"), &[e], F32);
+        }
         match &s.moe {
             Some(m) if il >= m.leading_dense => {
                 let (x, f) = (m.n_expert, m.n_ff_exp);

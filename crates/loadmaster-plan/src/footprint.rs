@@ -169,6 +169,13 @@ pub fn kv_bytes_per_cell(kv: KvType, layer: &Layer) -> Option<u64> {
     Some(kv.row_bytes(layer.k_dim.into())? + kv.row_bytes(layer.v_dim.into())?)
 }
 
+/// Recurrent state of one layer for all sequences: llama.cpp allocates one f32 row of conv
+/// and one of recurrent state per sequence (`mem_size = max(1, n_seq_max)`, `n_rs_seq` 0;
+/// llama-memory-recurrent.cpp at 6c01da6). Fixed: it does not grow with context.
+pub fn recurrent_bytes(cfg: &Config, layer: &Layer) -> u64 {
+    layer.recurrent_bytes * u64::from(cfg.n_seq.max(1))
+}
+
 /// Whether every layer's KV rows are valid for `kv`.
 pub fn kv_type_valid(model: &ModelInfo, kv: KvType) -> bool {
     model
@@ -319,6 +326,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
     let mut experts_cpu = 0u64;
     let mut kv_gpu = 0u64;
     let mut kv_cpu = 0u64;
+    let (mut rs_gpu, mut rs_cpu) = (0u64, 0u64);
     let mut gpu_layers = 0u32;
     for (il, layer) in (0u32..).zip(&model.layers) {
         let kv = if model.has_kv_cache() {
@@ -326,9 +334,11 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
         } else {
             0
         };
+        let rs = recurrent_bytes(cfg, layer);
         if placement.layer_on_gpu(il, n_layer) {
             gpu_layers += 1;
             kv_gpu += kv;
+            rs_gpu += rs;
             if il < placement.n_cpu_moe {
                 w_gpu += layer.bytes - layer.expert_bytes;
                 experts_cpu += layer.expert_bytes;
@@ -337,6 +347,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             }
         } else {
             kv_cpu += kv;
+            rs_cpu += rs;
             w_cpu += layer.bytes;
         }
     }
@@ -392,16 +403,24 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             bytes: kv_gpu,
             detail: kv_detail(model, cfg, gpu_layers),
         },
-        if gpu_layers > 0 {
-            compute_buffer(model, cfg)
-        } else {
-            Term {
-                key: "compute",
-                bytes: 0,
-                detail: "no layers on GPU".into(),
-            }
-        },
     ];
+    // Hybrid models only, so other plans keep the same terms.
+    if model.n_recurrent_layers() > 0 {
+        gpu.push(Term {
+            key: "recurrent",
+            bytes: rs_gpu,
+            detail: recurrent_detail(model, cfg, gpu_layers),
+        });
+    }
+    gpu.push(if gpu_layers > 0 {
+        compute_buffer(model, cfg)
+    } else {
+        Term {
+            key: "compute",
+            bytes: 0,
+            detail: "no layers on GPU".into(),
+        }
+    });
     // Several GPUs: layers fill them in order (llama.cpp assigns contiguous layers by the
     // cumulative `--tensor-split`; the output head is a slot on the last GPU). Each GPU
     // gets its own compute buffer and headroom; the projector goes on the first.
@@ -435,7 +454,7 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
                 } else {
                     0
                 };
-                w + kv
+                w + kv + recurrent_bytes(cfg, layer)
             })
             .collect();
         let out = if output_gpu { model.output_bytes } else { 0 };
@@ -512,6 +531,19 @@ pub fn footprint(model: &ModelInfo, placement: Placement, cfg: &Config) -> Optio
             detail: format!("KV of {} CPU layers", n_layer - gpu_layers),
         });
     }
+    if rs_cpu > 0 {
+        host.push(Term {
+            key: "recurrent_cpu",
+            bytes: rs_cpu,
+            detail: format!(
+                "recurrent state of {} CPU layers",
+                model.layers[..(n_layer - gpu_layers) as usize]
+                    .iter()
+                    .filter(|l| l.is_recurrent())
+                    .count()
+            ),
+        });
+    }
     host.push(host_compute_buffer(
         model,
         cfg,
@@ -546,8 +578,15 @@ fn kv_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
         );
     }
     let ty = cfg.kv.flag();
-    let gpu = &model.layers[(model.n_layer - gpu_layers) as usize..];
-    let Some(sample) = gpu.first() else {
+    let on_gpu = &model.layers[(model.n_layer - gpu_layers) as usize..];
+    // Recurrent layers keep no KV cache: count the attention layers "8 of 32".
+    let gpu: Vec<&Layer> = on_gpu.iter().filter(|l| !l.is_recurrent()).collect();
+    let of = if gpu.len() < on_gpu.len() {
+        format!(" of {}", on_gpu.len())
+    } else {
+        String::new()
+    };
+    let Some(&sample) = gpu.first() else {
         return format!("{ty}, no layers on GPU");
     };
     let width = |l: &Layer| format!("(K {} + V {})", l.k_dim, l.v_dim);
@@ -559,8 +598,8 @@ fn kv_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
     };
     let swa = gpu.iter().filter(|l| l.swa).count();
     if swa > 0 {
-        let swa_layer = gpu.iter().find(|l| l.swa).unwrap_or(sample);
-        let global_layer = gpu.iter().find(|l| !l.swa).unwrap_or(sample);
+        let swa_layer = gpu.iter().copied().find(|l| l.swa).unwrap_or(sample);
+        let global_layer = gpu.iter().copied().find(|l| !l.swa).unwrap_or(sample);
         format!(
             "{ty}: {} global layers x {} cells x {} + {swa} sliding-window layers x {} cells (window {}) x {}, x {elem}",
             gpu.len() - swa,
@@ -572,7 +611,7 @@ fn kv_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
         )
     } else {
         format!(
-            "{ty}: {} layers x {} cells x {}{} x {elem}",
+            "{ty}: {}{of} layers x {} cells x {}{} x {elem}",
             gpu.len(),
             kv_cells(cfg, sample, model.swa_window),
             width(sample),
@@ -583,6 +622,25 @@ fn kv_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
             },
         )
     }
+}
+
+fn recurrent_detail(model: &ModelInfo, cfg: &Config, gpu_layers: u32) -> String {
+    let on_gpu = &model.layers[(model.n_layer - gpu_layers) as usize..];
+    let rec: Vec<&Layer> = on_gpu.iter().filter(|l| l.is_recurrent()).collect();
+    let n_seq = cfg.n_seq.max(1);
+    match rec.first() {
+        None => "no recurrent layers on GPU".into(),
+        Some(l) => format!(
+            "f32 conv + recurrent state: {} recurrent layers x {} x {n_seq} sequence{}; fixed, does not grow with context",
+            rec.len(),
+            mib(l.recurrent_bytes),
+            if n_seq == 1 { "" } else { "s" }
+        ),
+    }
+}
+
+fn mib(bytes: u64) -> String {
+    format!("{:.2} MiB", bytes as f64 / MIB as f64)
 }
 
 /// Bytes as GiB with two decimals, the unit every human-facing number uses.
@@ -601,6 +659,7 @@ mod tests {
             k_dim: k,
             v_dim: v,
             swa,
+            recurrent_bytes: 0,
         }
     }
 
@@ -655,6 +714,24 @@ mod tests {
     fn quantised_kv_needs_whole_blocks() {
         assert!(kv_bytes_per_cell(KvType::Q8_0, &layer(80, 80, false)).is_none());
         assert!(kv_bytes_per_cell(KvType::F16, &layer(80, 80, false)).is_some());
+    }
+
+    #[test]
+    fn recurrent_layers_keep_a_fixed_state_and_no_kv() {
+        let rec = Layer {
+            recurrent_bytes: 1_122_304,
+            ..layer(0, 0, false)
+        };
+        for kv in KvType::ALL {
+            assert_eq!(kv_bytes_per_cell(kv, &rec), Some(0));
+        }
+        let mut c = cfg(32768, KvType::Q8_0);
+        assert_eq!(recurrent_bytes(&c, &rec), 1_122_304);
+        c.ctx = 262_144;
+        assert_eq!(recurrent_bytes(&c, &rec), 1_122_304);
+        c.n_seq = 4;
+        assert_eq!(recurrent_bytes(&c, &rec), 4 * 1_122_304);
+        assert_eq!(recurrent_bytes(&c, &layer(512, 512, false)), 0);
     }
 
     #[test]

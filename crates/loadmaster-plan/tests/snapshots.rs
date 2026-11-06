@@ -113,6 +113,18 @@ case!(
     FakeHw::m3_max_64g(),
     None
 );
+case!(
+    qwen35_0_8b_m2_8g_32k_hybrid,
+    QWEN35_0_8B,
+    FakeHw::m2_8g(),
+    Some(32768)
+);
+case!(
+    qwen35_0_8b_3060_default_ctx_hybrid,
+    QWEN35_0_8B,
+    FakeHw::rtx_3060_12g(),
+    None
+);
 
 #[test]
 fn json_shape() {

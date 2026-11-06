@@ -1,0 +1,32 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(QWEN35_0_8B, FakeHw::m2_8g(), Some(32768), None)"
+---
+WEIGHT   Qwen3.5-0.8B · qwen35 · Q4_K_M · 24 layers
+  weights              0.43 GiB   24/24 layers + output head 0.13 GiB (tied: second copy of token embeddings); token embeddings 0.13 GiB stay on CPU
+  KV cache             0.38 GiB   f16: 6 of 24 layers x 32768 cells x (K 512 + V 512) x 2 B
+  recurrent state      0.02 GiB   f32 conv + recurrent state: 18 recurrent layers x 1.07 MiB x 1 sequence; fixed, does not grow with context
+  compute buffer       0.13 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 32768 + peak of attention 12 B x n_ubatch 512 x (n_embd 1024 + q 2048 + k 512 + v 512) + 2 B x ctx 32768 x (k + v); flash attention
+  headroom             1.50 GiB   macOS and display on unified memory (default 1536 MiB)
+  ------------------------------
+  GPU total            2.45 GiB   of 5.33 GiB usable on Apple M2 (Metal working-set default, 2/3 of RAM (estimated))
+  weights on CPU       0.13 GiB   token embeddings
+  compute on CPU       0.04 GiB   mask 2 B x n_ubatch 512 x ctx 32768 + 16 B x n_ubatch x n_embd 1024
+  RAM needed           1.13 GiB   of 4.00 GiB RAM available now (fake: 1/2 of RAM; unified memory: GPU side minus headroom + host side)
+
+BALANCE  all 24 layers and the output head on GPU
+  ctx 32768: requested with --ctx
+  KV cache f16: f16 fits with every layer on GPU
+  flash attention on: required for a quantised V cache and smaller compute buffers
+  tried:
+    fits all layers on GPU, f16 KV                          GPU    2.45 GiB  host    1.13 GiB
+
+COMMAND
+  llama-server -m fixtures/gguf/qwen3.5-0.8b/Qwen3.5-0.8B-Q4_K_M.gguf -c 32768 -ngl 25 -fa on -np 1 --jinja
+
+Other options:
+  ctx 65536   2.9 GiB  all on GPU, f16 KV  full GPU speed
+  Q5_K_M     ~2.5 GiB  all on GPU, f16 KV  full GPU speed
+             size estimated from 5.70 bpw; plan the real file to confirm
+  Q3_K_M     ~2.4 GiB  all on GPU, f16 KV  full GPU speed
+             size estimated from 3.91 bpw; plan the real file to confirm

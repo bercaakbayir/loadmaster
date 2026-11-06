@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::arch::{self, KvLayout, SwaPattern};
+use crate::arch::{self, KvLayout, RecurrentPattern, SsmDims, SwaPattern};
 use crate::{
     ChatTemplate, Error, Format, Layer, Mmproj, ModelInfo, ModelKind, Pooling, Quant, Source,
 };
@@ -240,6 +240,9 @@ fn gguf_arch(model_type: &str) -> &str {
         "nomic_bert" => "nomic-bert",
         "modernbert" => "modern-bert",
         "glm4_moe" => "glm4moe",
+        "qwen3_5" | "qwen3_5_text" => "qwen35",
+        "qwen3_5_moe" | "qwen3_5_moe_text" => "qwen35moe",
+        "qwen3_next" => "qwen3next",
         other => other,
     }
 }
@@ -478,9 +481,38 @@ impl ModelInfo {
         };
         let swa_window = window.filter(|_| swa_layers.contains(&true));
 
+        // Hybrid models (Qwen3.5, Qwen3-Next): `layer_types` names `linear_attention`
+        // layers; without it, the architecture's pattern.
+        let recurrent_layers: Vec<bool> = match cfg.get("layer_types").and_then(Value::as_array) {
+            Some(types) if types.len() == n_layer as usize => types
+                .iter()
+                .map(|t| t.as_str() == Some("linear_attention"))
+                .collect(),
+            _ => {
+                let p = spec
+                    .map_or(RecurrentPattern::None, |s| s.recurrent)
+                    .with_interval(cfg.u32("full_attention_interval"));
+                (0..n_layer).map(|il| p.is_recurrent(il)).collect()
+            }
+        };
+        // As llama.cpp's converter maps them (conversion/qwen.py at 6c01da6).
+        let recurrent_bytes = if recurrent_layers.contains(&true) {
+            let linear = |k: &str| cfg.u32(k).ok_or_else(|| missing(k));
+            SsmDims {
+                d_conv: linear("linear_conv_kernel_dim")?,
+                d_inner: linear("linear_value_head_dim")? * linear("linear_num_value_heads")?,
+                d_state: linear("linear_key_head_dim")?,
+                n_group: linear("linear_num_key_heads")?,
+            }
+            .state_bytes()
+        } else {
+            0
+        };
+
         let mut layers: Vec<Layer> = (0..n_layer as usize)
             .map(|il| {
                 let (k_dim, v_dim) = match mla {
+                    _ if recurrent_layers[il] => (0, 0),
                     Some((rank, rope)) => (rank + rope, rank),
                     None => (n_head_kv * head_dim, n_head_kv * head_dim),
                 };
@@ -489,7 +521,12 @@ impl ModelInfo {
                     expert_bytes: 0,
                     k_dim,
                     v_dim,
-                    swa: swa_layers[il],
+                    swa: swa_layers[il] && !recurrent_layers[il],
+                    recurrent_bytes: if recurrent_layers[il] {
+                        recurrent_bytes
+                    } else {
+                        0
+                    },
                 }
             })
             .collect();

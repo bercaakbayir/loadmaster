@@ -32,6 +32,15 @@ Run `loadmaster report` on your hardware to add a measured point (ADR 0009).
 
 `loadmaster report` on a vision or audio model records the real buffers.
 
+## Hybrid-attention models (loadmaster's own)
+
+- One measured run backs the formulas: Qwen3.5-0.8B at 32k on Metal, where KV and the
+  recurrent state match llama.cpp's buffers exactly (`validation/observed.toml`). Qwen3-Next
+  and the MoE variant have no measured run, and neither does more than one sequence (`-np`).
+- vLLM plans count the state at f32 per sequence, an upper bound; vLLM's own state dtype and
+  its page alignment of attention blocks to the state size are not modelled.
+- Speculative decoding's extra state rows (llama.cpp `n_rs_seq`) are not counted.
+
 ## Model search (loadmaster's own)
 
 - `suggest` shows the Hub's parameter count, which for packed formats (NVFP4, some AWQ)

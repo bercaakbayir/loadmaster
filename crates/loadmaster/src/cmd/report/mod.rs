@@ -108,6 +108,9 @@ struct Prediction {
     gpu_weights_mib: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     gpu_kv_mib: Option<f64>,
+    /// Hybrid models: the recurrent state (ADR 0016).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gpu_recurrent_mib: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     gpu_compute_mib: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,8 +137,15 @@ struct DeviceBuffers {
     device: String,
     model: f64,
     kv: f64,
+    /// llama.cpp's `RS buffer`: recurrent state of hybrid and recurrent models.
+    #[serde(skip_serializing_if = "is_zero")]
+    rs: f64,
     compute: f64,
     output: f64,
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 #[derive(Serialize)]
@@ -360,13 +370,14 @@ fn observed_part(run: Run) -> Observed {
         .chain(std::iter::once("CPU".to_owned()))
         .map(|d| DeviceBuffers {
             model: run.log.mib(&d, Kind::Model),
-            kv: run.log.mib(&d, Kind::Kv) + run.log.mib(&d, Kind::Rs),
+            kv: run.log.mib(&d, Kind::Kv),
+            rs: run.log.mib(&d, Kind::Rs),
             compute: run.log.mib(&d, Kind::Compute),
             output: run.log.mib(&d, Kind::Output),
             device: d,
         })
         .collect();
-    buffers.retain(|b| b.model + b.kv + b.compute + b.output > 0.0);
+    buffers.retain(|b| b.model + b.kv + b.rs + b.compute + b.output > 0.0);
     let vision_compute: f64 = run
         .log
         .buffers
@@ -404,6 +415,7 @@ fn prediction_part(plan: Result<&Plan, &loadmaster_plan::NoFit>, ctx: u32) -> Pr
                 gpu_mib: mib(p.footprint.gpu_bytes),
                 gpu_weights_mib: term("weights"),
                 gpu_kv_mib: term("kv"),
+                gpu_recurrent_mib: term("recurrent"),
                 gpu_compute_mib: term("compute"),
                 tok_s: p.speed.as_ref().and_then(|s| s.at.first()).map(|a| {
                     [
@@ -422,6 +434,7 @@ fn prediction_part(plan: Result<&Plan, &loadmaster_plan::NoFit>, ctx: u32) -> Pr
             gpu_mib: mib(n.closest.gpu_bytes),
             gpu_weights_mib: None,
             gpu_kv_mib: None,
+            gpu_recurrent_mib: None,
             gpu_compute_mib: None,
             tok_s: None,
         },
@@ -553,7 +566,7 @@ fn summary(r: &Report, style: crate::ui::Style) -> String {
     };
     let gib = |mib: f64| format!("{:.1} GiB", mib / 1024.0);
     let predicted_buffers = match (p.gpu_weights_mib, p.gpu_kv_mib, p.gpu_compute_mib) {
-        (Some(w), Some(k), Some(c)) => gib(w + k + c),
+        (Some(w), Some(k), Some(c)) => gib(w + k + p.gpu_recurrent_mib.unwrap_or(0.0) + c),
         _ => "-".into(),
     };
     let on_gpu: Vec<&DeviceBuffers> = o
@@ -566,7 +579,7 @@ fn summary(r: &Report, style: crate::ui::Style) -> String {
     } else {
         gib(on_gpu
             .iter()
-            .map(|b| b.model + b.kv + b.compute + b.output)
+            .map(|b| b.model + b.kv + b.rs + b.compute + b.output)
             .sum())
     };
     let rows = [

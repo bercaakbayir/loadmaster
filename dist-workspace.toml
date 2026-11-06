@@ -20,5 +20,8 @@ targets = [
   "aarch64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
 ]
+# Dependabot bumps the actions in release.yml; accept that instead of failing the release.
+# The next `dist generate` rewrites the file anyway.
+allow-dirty = ["ci"]
 install-path = "CARGO_HOME"
 install-updater = false

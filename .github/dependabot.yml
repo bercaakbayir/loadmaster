@@ -12,3 +12,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Its tag is the Rust version under test (the msrv job pins 1.85), not the action's.
+      - dependency-name: dtolnay/rust-toolchain

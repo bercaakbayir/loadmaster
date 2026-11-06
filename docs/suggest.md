@@ -50,8 +50,16 @@ exact plan: loadmaster plan hf://unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD
    repo is skipped without downloading anything else.
 4. **Plan exactly.** The rest are planned from their headers, every quant of a GGUF repo
    like `lm plan hf://org/repo`, and the best quant kept: the largest that fits entirely on
-   the GPU, else the smallest that runs with offload. `~gpu` means that quant's size was
-   scaled from another quant's header.
+   the GPU and still reaches 5 tok/s at 4k context (the fast end of its speed band), else
+   the largest that fits entirely on the GPU, else the smallest that runs with offload.
+   `~gpu` means that quant's size was scaled from another quant's header.
+
+   The speed floor keeps a quant that fits but crawls from winning: Llama 3.3 70B on
+   `192GB-unified@256` fits even at f16, but at under 2 tok/s, so Q4_K_L (about 5 tok/s)
+   is kept instead. It is judged at 4k context because a long KV cache slows every quant
+   alike, while the weights decide which one crawls. With no bandwidth known (a raw size
+   without `@`, or a GPU missing from the catalog) there is no speed, and the largest that
+   fits is kept as before. `lm plan hf://org/repo` says when the floor skipped larger quants.
 5. **Rank.** Fits entirely on the GPU first, then with CPU offload; within each, the largest
    model first, then the Hub's order. Planning goes biggest first and stops once `--limit`
    models fit on the GPU, since nothing smaller could outrank them.

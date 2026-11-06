@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use loadmaster_plan::{Error, PlanRequest, explain};
+use loadmaster_plan::{Error, PlanRequest, explain, speed::Speed};
 use serde::Serialize;
 
 use crate::PlanArgs;
@@ -167,6 +167,10 @@ pub(crate) struct RepoRow {
     /// Estimated generation tok/s x10 at the planned context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tok_s_x10: Option<(u32, u32)>,
+    /// The same at 4k context (or the planned one, if shorter): the weights' speed, which
+    /// [`best_fit`] judges.
+    #[serde(skip)]
+    pub(crate) short_tok_s_x10: Option<(u32, u32)>,
 }
 
 /// Every GGUF quant of a Hub repo planned on this hardware: the base quant (Q4_K_M, else
@@ -177,10 +181,19 @@ pub(crate) struct RepoPlan {
     pub(crate) rows: Vec<RepoRow>,
 }
 
-/// The largest quant that runs entirely on the GPU, else the smallest that runs at all.
+/// Below this many tokens per second at 4k context, even at the fast end of its estimate, a
+/// quant crawls.
+pub(crate) const MIN_TOK_S: u32 = 5;
+
+/// The largest quant that runs entirely on the GPU at a usable speed (the fast end of its 4k
+/// band at least [`MIN_TOK_S`]), else the largest on the GPU, else the smallest that runs at
+/// all. A quant with no speed estimate is judged on fit alone. 4k, not the planned context:
+/// a long KV cache slows every quant alike, while the weights decide which one crawls.
 pub(crate) fn best_fit(rows: &[RepoRow]) -> Option<usize> {
+    let usable = |r: &RepoRow| r.short_tok_s_x10.is_none_or(|(_, hi)| hi >= MIN_TOK_S * 10);
     rows.iter()
-        .rposition(|r| r.fit == "gpu")
+        .rposition(|r| r.fit == "gpu" && usable(r))
+        .or_else(|| rows.iter().rposition(|r| r.fit == "gpu"))
         .or_else(|| rows.iter().position(|r| r.fit != "no"))
 }
 
@@ -223,7 +236,7 @@ pub(crate) fn plan_repo_quants(
                 let ratio = q.size.saturating_sub(header) as f64 / base_weights;
                 loadmaster_plan::alternatives::requantized(&model, &q.label, ratio)
             };
-            let row = |fit, ctx, kv, gpu_bytes, short_by, tok_s_x10| RepoRow {
+            let row = |fit, ctx, kv, gpu_bytes, short_by, speed: Option<&Speed>| RepoRow {
                 quant: q.label.clone(),
                 file: q.file.clone(),
                 size_bytes: q.size,
@@ -233,7 +246,8 @@ pub(crate) fn plan_repo_quants(
                 gpu_bytes,
                 short_by,
                 exact,
-                tok_s_x10,
+                tok_s_x10: speed.and_then(|s| s.at.last()).map(|a| a.tok_s_x10),
+                short_tok_s_x10: speed.and_then(|s| s.at.first()).map(|a| a.tok_s_x10),
             };
             Ok(match loadmaster_plan::plan(&m, snap, gpu, req) {
                 Ok(p) => row(
@@ -246,10 +260,7 @@ pub(crate) fn plan_repo_quants(
                     Some(p.kv.flag()),
                     p.footprint.gpu_bytes,
                     None,
-                    p.speed
-                        .as_ref()
-                        .and_then(|s| s.at.last())
-                        .map(|a| a.tok_s_x10),
+                    p.speed.as_ref(),
                 ),
                 Err(Error::CannotFit(n)) => row(
                     "no",
@@ -391,6 +402,16 @@ fn repo_table(
                 base.label
             )));
         }
+        if let Some(p) = pick
+            && let Some(short) = rows[p].short_tok_s_x10
+            && rows[p + 1..].iter().any(|r| r.fit == "gpu")
+        {
+            out.push_str(&style.dim(&format!(
+                "best fit: {} at {} with 4k context; larger quants fit but run under {MIN_TOK_S} tok/s\n",
+                rows[p].quant,
+                loadmaster_plan::speed::band_text(short)
+            )));
+        }
         let r = &rows[pick.unwrap_or(0)];
         out.push_str(&format!(
             "exact plan{}: loadmaster plan hf://{}/{}\n",
@@ -411,6 +432,54 @@ fn repo_table(
 mod tests {
     use super::*;
     use loadmaster_store::remote::RemoteFile;
+
+    #[test]
+    fn best_fit_skips_quants_that_fit_but_crawl() {
+        let row = |quant: &str, fit, short_tok_s_x10| RepoRow {
+            quant: quant.into(),
+            file: format!("{quant}.gguf"),
+            size_bytes: 0,
+            fit,
+            ctx: 8192,
+            kv: None,
+            gpu_bytes: 0,
+            short_by: None,
+            exact: false,
+            // At the planned context every quant may crawl; only the 4k speed is judged.
+            tok_s_x10: Some((10, 20)),
+            short_tok_s_x10,
+        };
+        // Llama-3.3-70B-like on 192 GB at 256 GB/s: f16 fits but crawls.
+        let rows = [
+            row("Q4_K_M", "gpu", Some((50, 58))),
+            row("Q6_K", "gpu", Some((37, 43))),
+            row("Q8_0", "gpu", Some((29, 33))),
+            row("F16", "gpu", Some((15, 18))),
+        ];
+        assert_eq!(best_fit(&rows), Some(0));
+        // Nothing reaches the floor: the largest that fits, as before.
+        assert_eq!(best_fit(&rows[1..]), Some(2));
+        // The fast end decides: 4.0-5.0 tok/s is usable.
+        let rows = [
+            row("Q4_K_M", "gpu", Some((60, 70))),
+            row("Q8_0", "gpu", Some((40, 50))),
+        ];
+        assert_eq!(best_fit(&rows), Some(1));
+        // No speed estimate: the largest on the GPU, unchanged.
+        let rows = [
+            row("Q4_K_M", "gpu", None),
+            row("Q8_0", "gpu", None),
+            row("F16", "offload", None),
+        ];
+        assert_eq!(best_fit(&rows), Some(1));
+        // Nothing on the GPU: the smallest that runs with offload, whatever its speed.
+        let rows = [
+            row("Q2_K", "no", None),
+            row("Q4_K_M", "offload", Some((10, 20))),
+            row("Q8_0", "offload", Some((60, 70))),
+        ];
+        assert_eq!(best_fit(&rows), Some(1));
+    }
 
     #[test]
     fn quant_labels_from_file_names() {

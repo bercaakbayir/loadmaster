@@ -177,3 +177,19 @@ host_free_mib = 1130
 # read later in the same session (ADR 0005). The planner's check uses this figure.
 host_available_mib = 4505
 llama_cpp_projected_mib = 5121
+
+[[model]]
+name = "Qwen3.5 0.8B Q4_K_M"
+sha256 = "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517"
+paths = ["~/Models/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf"]
+header_url = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf"
+source = "unsloth/Qwen3.5-0.8B-GGUF, loadmaster report"
+llama_cpp = "0.7.0 (build 11669, commit 620d2225c), Homebrew"
+device = "Apple M5 Pro, 24 GB, Metal"
+observed_on = "2026-11-06"
+
+# Hybrid (ADR 0016): KV on 6 of 24 layers; `rs` is the recurrent state of the other 18.
+[[model.run]]
+args = { ctx = 32768, ubatch = 512, flash_attn = true, ngl = 25, kv = "f16" }
+gpu = { model = 497.39, kv = 384, rs = 19.27, compute = 128.43 }
+cpu = { model = 198.93, kv = 0, compute = 40.02 }

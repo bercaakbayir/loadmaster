@@ -115,7 +115,8 @@ All notable changes to this project are documented here. The format follows
   (every `full_attention_interval`th), not on every layer, which overstated it about 4x. The
   Gated DeltaNet layers' fixed f32 state is a new `recurrent state` term, counted once per
   sequence (ADR 0016). JSON: new term keys `recurrent` and `recurrent_cpu`, and
-  hybrid models' layers carry `recurrent_bytes`.
+  hybrid models' layers carry `recurrent_bytes`. `report` records llama.cpp's `RS buffer`
+  as `rs` instead of adding it to `kv`, and predicts it as `gpu_recurrent_mib`.
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

@@ -43,6 +43,8 @@ struct Args {
 struct Device {
     model: Option<f64>,
     kv: f64,
+    /// llama.cpp's `RS buffer` (hybrid models, ADR 0016).
+    rs: Option<f64>,
     compute: f64,
 }
 
@@ -190,6 +192,16 @@ fn planner_matches_observed_buffers() {
                     failures.push(format!(
                         "{} ctx {} ngl {}: {what} planned {:.2} observed {:.2}",
                         m.name, a.ctx, a.ngl, planned[i], seen[i]
+                    ));
+                }
+            }
+            if let Some(rs) = r.gpu.rs {
+                let planned_rs = get(&fp.gpu, "recurrent");
+                eprintln!("  recurrent state planned {planned_rs:.2} observed {rs:.2}");
+                if (planned_rs - rs).abs() > 1.0 {
+                    failures.push(format!(
+                        "{} ctx {}: gpu recurrent state planned {planned_rs:.2} observed {rs:.2}",
+                        m.name, a.ctx
                     ));
                 }
             }

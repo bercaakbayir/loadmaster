@@ -55,6 +55,10 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
+# cargo-dist builds release binaries with `--profile dist`.
+[profile.dist]
+inherits = "release"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

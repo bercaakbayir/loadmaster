@@ -83,6 +83,28 @@ fn hub() -> Hub {
             ),
         ],
     );
+    // A hybrid-attention model (full_attention_interval and ssm.* keys): one real header, the
+    // other quants listed only and scaled from it.
+    let q35 = gguf("qwen3.5-0.8b/Qwen3.5-0.8B-Q4_K_M.gguf");
+    let size = q35.size;
+    let listed = |name: &str, tenths: u64| {
+        (
+            name.to_string(),
+            File {
+                bytes: Vec::new(),
+                size: size * tenths / 10,
+            },
+        )
+    };
+    repos.insert(
+        "fx/qwen3.5-0.8b-GGUF".into(),
+        vec![
+            ("Qwen3.5-0.8B-Q4_K_M.gguf".into(), q35),
+            listed("Qwen3.5-0.8B-Q3_K_M.gguf", 8),
+            listed("Qwen3.5-0.8B-Q8_0.gguf", 17),
+            listed("Qwen3.5-0.8B-BF16.gguf", 32),
+        ],
+    );
     repos.insert(
         "fx/gemma-3-12b-GGUF".into(),
         vec![
@@ -793,4 +815,60 @@ fn best_fit_skips_a_quant_that_fits_but_crawls() {
     let out = text(&o).0;
     let q8 = out.lines().find(|l| l.starts_with("Q8_0")).unwrap();
     assert!(q8.ends_with("← best fit"), "{out}");
+}
+
+#[test]
+fn the_quant_table_plans_a_hybrid_model_from_its_full_attention_layers() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    // 3 GB: with KV on all 24 layers (~1.5 GiB at f16) not even Q4_K_M would keep f16 KV; with
+    // KV only on the 6 full-attention layers (384 MiB) everything up to Q8_0 does.
+    let args = ["plan", "--pretend", "3GB", "--ctx", "32768"];
+    let repo = "hf://fx/qwen3.5-0.8b-GGUF";
+    let o = run(&url, home.path(), None, &[&args[..], &[repo]].concat());
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    assert!(
+        !out.contains("unknown") && !err.contains("unknown"),
+        "{out}{err}"
+    );
+    insta::assert_snapshot!(out);
+
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&args[..], &[repo, "--json"]].concat(),
+    );
+    let v: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
+    assert_eq!(v["warnings"], serde_json::json!([]));
+    let q4 = v["quants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|q| q["quant"] == "Q4_K_M")
+        .unwrap();
+    assert_eq!(q4["kv"], "f16", "{v}");
+
+    // The table's exact row is the single-file plan: KV for 6 of 24 layers plus the
+    // recurrent state, as measured in validation/observed.toml.
+    let file = format!("{repo}/Qwen3.5-0.8B-Q4_K_M.gguf");
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&args[..], &[&file, "--json"]].concat(),
+    );
+    let p: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
+    let terms = p["plan"]["footprint"]["gpu"].as_array().unwrap();
+    let term = |key: &str| {
+        terms
+            .iter()
+            .find(|t| t["key"] == key)
+            .map(|t| t["bytes"].as_u64().unwrap())
+    };
+    assert_eq!(term("kv"), Some(384 << 20), "{p}");
+    assert!(term("recurrent").unwrap() > 0, "{p}");
+    let gpu: u64 = terms.iter().map(|t| t["bytes"].as_u64().unwrap()).sum();
+    assert_eq!(q4["gpu_bytes"].as_u64(), Some(gpu), "{p}");
 }

@@ -473,6 +473,7 @@ fn hardware_part(gpu: &loadmaster_hw::Gpu, host: &loadmaster_hw::Host) -> Hardwa
         vendor: match gpu.vendor {
             loadmaster_hw::Vendor::Nvidia => "nvidia",
             loadmaster_hw::Vendor::Apple => "apple",
+            loadmaster_hw::Vendor::Amd => "amd",
         },
         memory: match gpu.memory {
             MemoryKind::Dedicated => "dedicated",

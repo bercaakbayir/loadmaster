@@ -34,10 +34,24 @@ Peak memory bandwidth, GB/s (10^9 B/s), as stated by the vendor. Fetched 2026-10
 | M5 | 153 | https://www.apple.com/newsroom/2025/10/apple-unleashes-m5-the-next-big-leap-in-ai-performance-for-apple-silicon/ (fetched 2026-11-06) |
 | M5 Pro; M5 Max 32-/40-core GPU | 307; 460 / 614 | https://www.apple.com/macbook-pro/specs/ (fetched 2026-11-06) |
 | M5 Ultra | 1200 (Apple: "1.2TB/s") | https://www.apple.com/mac-studio/specs/ (fetched 2026-11-06) |
+| Radeon RX 7900 XT, 7900 XTX | 800, 960 | https://www.amd.com/en/products/graphics/desktops/radeon/7000-series/amd-radeon-rx-7900xt.html, …/amd-radeon-rx-7900xtx.html (fetched 2026-11-06) |
+| Radeon RX 9070, 9070 XT | 640, 640 | https://www.amd.com/en/products/graphics/desktops/radeon/9000-series/amd-radeon-rx-9070.html, …/amd-radeon-rx-9070xt.html (fetched 2026-11-06) |
+| Radeon PRO W7900 | 864 | https://www.amd.com/en/products/graphics/workstations/radeon-pro/w7900.html (fetched 2026-11-06) |
+| Radeon AI PRO R9700 | 640 | https://www.amd.com/en/products/graphics/workstations/radeon-ai-pro/ai-9000-series/amd-radeon-ai-pro-r9700.html (fetched 2026-11-06) |
+| Ryzen AI Max+ 395 | 256 (derived: AMD states "256-bit LPDDR5x" at "LPDDR5x-8000"; 256 bit x 8000 MT/s / 8) | https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html (fetched 2026-11-06) |
 
 Chips sold with two bandwidths list the lower one and say so. Not verified, so not in the
 catalog: the RTX 4070 GDDR6 variant. A detected NVIDIA card missing from the catalog uses NVML:
 bus width x maximum memory clock x 2 (reproduces the 4090, 3060 and A100 figures above).
+
+AMD is `--pretend` only (no detection yet). Speed on AMD uses the CUDA fit below: there are
+no ROCm or Vulkan points yet, so treat those bands as a guess. On a Ryzen AI Max the GPU's
+share of unified memory is not Metal's rule: AMD's Variable Graphics Memory gives the GPU at
+most 96 GB of 128 (3/4) on Windows
+(https://www.amd.com/en/blogs/2025/amd-ryzen-ai-max-upgraded-run-up-to-128-billion-parameter-llms-lm-studio.html),
+and Linux can raise it through the GTT size, so the share defaults to 3/4 of RAM and
+`gpu <size>` (`ryzen ai max 128gb gpu 110gb`) replaces it. The Ryzen AI Max 390 and 385 are
+not in the catalog: their memory bus was not checked.
 
 ## Model
 

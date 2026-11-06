@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use loadmaster_hw::MemoryKind;
-use loadmaster_hw::catalog::{CARDS, CHIPS};
+use loadmaster_hw::catalog::{APUS, CARDS, CHIPS};
 use loadmaster_plan::gib;
 
 pub fn run(json: bool, hw: &crate::HwArgs) -> anyhow::Result<ExitCode> {
@@ -44,7 +44,7 @@ pub fn run(json: bool, hw: &crate::HwArgs) -> anyhow::Result<ExitCode> {
 }
 
 fn print_catalog() {
-    println!("--pretend accepts any of these cards (VRAM as nvidia-smi reports it):");
+    println!("--pretend accepts any of these cards (VRAM as nvidia-smi or rocm-smi reports it):");
     for c in CARDS {
         println!(
             "  {:<36} {:>10}  {:>7} GB/s",
@@ -56,6 +56,12 @@ fn print_catalog() {
     println!("a Mac with its RAM, e.g. `m4 pro 48gb`:");
     for c in CHIPS {
         println!("  {:<36} {:>10}  {:>7} GB/s", c.name, "", c.bandwidth_gbs);
+    }
+    println!(
+        "an APU with its RAM, e.g. `ryzen ai max 128gb` (GPU share 3/4; `gpu 110gb` to change):"
+    );
+    for a in APUS {
+        println!("  {:<36} {:>10}  {:>7} GB/s", a.name, "", a.bandwidth_gbs);
     }
     println!(
         "or a size: `24GB` (dedicated), `48GB-unified` (Apple-like), with bandwidth `24GB@936`; add `+64GB` for host RAM"

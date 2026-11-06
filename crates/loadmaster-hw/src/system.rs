@@ -39,6 +39,19 @@ pub(crate) fn apple_working_set(total: u64, wired_limit_mb: u64) -> (u64, String
     }
 }
 
+/// The GPU's share of unified memory on a non-Apple APU (Ryzen AI Max). Not Metal's rule: the
+/// share is set in firmware (AMD Variable Graphics Memory, at most 96 of 128 GB, i.e. 3/4) or
+/// raised on Linux through the GTT size, so a `given` share replaces the default.
+pub(crate) fn apu_gpu_share(total: u64, given: Option<u64>) -> (u64, String) {
+    match given {
+        Some(b) => (b, format!("GPU share {} as given", crate::gib_str(b))),
+        None => (
+            total * 3 / 4,
+            "AMD Variable Graphics Memory maximum, 3/4 of RAM (96 of 128 GB); add `gpu <size>` for another share".into(),
+        ),
+    }
+}
+
 fn sysctl(name: &str) -> Option<String> {
     let out = Command::new("sysctl").args(["-n", name]).output().ok()?;
     out.status

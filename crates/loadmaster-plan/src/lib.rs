@@ -551,7 +551,8 @@ fn device_order_warning(hw: &HwSnapshot) -> Option<Warning> {
     })
 }
 
-fn common_warnings(model: &ModelInfo) -> Vec<Warning> {
+/// Warnings about the model itself, whatever the hardware: unknown architecture, short file.
+pub fn common_warnings(model: &ModelInfo) -> Vec<Warning> {
     let mut warnings = Vec::new();
     if !model.arch_known {
         warnings.push(Warning::new(

@@ -175,6 +175,9 @@ pub(crate) struct RepoPlan {
     pub(crate) model: loadmaster_model::ModelInfo,
     pub(crate) base: RepoQuant,
     pub(crate) rows: Vec<RepoRow>,
+    /// The base quant's plan warnings (the model's own when it does not fit): what
+    /// `plan hf://org/repo/file.gguf` would print for it.
+    pub(crate) warnings: Vec<loadmaster_plan::Warning>,
 }
 
 /// The largest quant that runs entirely on the GPU, else the smallest that runs at all.
@@ -213,6 +216,7 @@ pub(crate) fn plan_repo_quants(
         .find(|f| f.path == base.file)
         .map_or(0, |f| f.size.saturating_sub(model.weight_bytes));
     let base_weights = base.size.saturating_sub(header).max(1) as f64;
+    let mut warnings = loadmaster_plan::common_warnings(&model);
     let rows: Vec<RepoRow> = quants
         .iter()
         .map(|q| -> anyhow::Result<RepoRow> {
@@ -236,21 +240,26 @@ pub(crate) fn plan_repo_quants(
                 tok_s_x10,
             };
             Ok(match loadmaster_plan::plan(&m, snap, gpu, req) {
-                Ok(p) => row(
-                    if p.placement.is_full(m.n_layer) {
-                        "gpu"
-                    } else {
-                        "offload"
-                    },
-                    p.ctx,
-                    Some(p.kv.flag()),
-                    p.footprint.gpu_bytes,
-                    None,
-                    p.speed
-                        .as_ref()
-                        .and_then(|s| s.at.last())
-                        .map(|a| a.tok_s_x10),
-                ),
+                Ok(p) => {
+                    if exact {
+                        warnings = p.warnings.clone();
+                    }
+                    row(
+                        if p.placement.is_full(m.n_layer) {
+                            "gpu"
+                        } else {
+                            "offload"
+                        },
+                        p.ctx,
+                        Some(p.kv.flag()),
+                        p.footprint.gpu_bytes,
+                        None,
+                        p.speed
+                            .as_ref()
+                            .and_then(|s| s.at.last())
+                            .map(|a| a.tok_s_x10),
+                    )
+                }
                 Err(Error::CannotFit(n)) => row(
                     "no",
                     n.ctx,
@@ -263,7 +272,12 @@ pub(crate) fn plan_repo_quants(
             })
         })
         .collect::<anyhow::Result<_>>()?;
-    Ok(RepoPlan { model, base, rows })
+    Ok(RepoPlan {
+        model,
+        base,
+        rows,
+        warnings,
+    })
 }
 
 /// `plan hf://org/repo`: every GGUF quant in the repo against this GPU. One header is
@@ -291,8 +305,12 @@ fn repo_table(
         extra_gpus,
         ..PlanRequest::default()
     };
-    let RepoPlan { model, base, rows } =
-        plan_repo_quants(&super::hub(args.offline), spec, files, &snap, &gpu, &req)?;
+    let RepoPlan {
+        model,
+        base,
+        rows,
+        warnings,
+    } = plan_repo_quants(&super::hub(args.offline), spec, files, &snap, &gpu, &req)?;
     let any_fit = rows.iter().any(|r| r.fit != "no");
     if args.json {
         println!(
@@ -303,6 +321,7 @@ fn repo_table(
                 "gpu": gpu.name,
                 "header_from": base.file,
                 "quants": rows,
+                "warnings": warnings,
             }))?
         );
     } else {
@@ -390,6 +409,9 @@ fn repo_table(
                 "~ = planned from the {} header, scaled to that file's size\n",
                 base.label
             )));
+        }
+        for w in &warnings {
+            out.push_str(&format!("{} {}\n", style.yellow("!"), w.short));
         }
         let r = &rows[pick.unwrap_or(0)];
         out.push_str(&format!(

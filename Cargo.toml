@@ -9,6 +9,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/bercaakbayir/loadmaster"
+homepage = "https://github.com/bercaakbayir/loadmaster"
 authors = ["Berca Akbayir <berca@ratel.sh>"]
 
 [workspace.dependencies]

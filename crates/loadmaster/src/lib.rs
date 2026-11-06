@@ -267,8 +267,9 @@ struct ReportArgs {
 
 #[derive(Args)]
 pub(crate) struct HwArgs {
-    /// Plan for hardware you don't have: a card (`rtx 4090`), a Mac (`m4 pro 48gb`) or a
-    /// size (`24GB`, `48GB-unified`), optionally with host RAM (`rtx 3090+128GB`).
+    /// Plan for hardware you don't have: a card (`rtx 4090`, `r9700`), a Mac (`m4 pro 48gb`),
+    /// an APU (`ryzen ai max 128gb`) or a size (`24GB`, `48GB-unified`), optionally with host
+    /// RAM (`rtx 3090+128GB`).
     /// `loadmaster gpu --pretend list` shows the catalog.
     #[arg(long, global = true, conflicts_with = "hw_file")]
     pub(crate) pretend: Option<String>,

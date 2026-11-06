@@ -415,6 +415,10 @@ pub fn headroom_for(gpu: &Gpu, overridden: Option<u64>) -> Headroom {
                 bytes: HEADROOM_NVIDIA,
                 basis: "NVIDIA driver and CUDA context (default 800 MiB)".into(),
             },
+            Vendor::Amd => Headroom {
+                bytes: HEADROOM_NVIDIA,
+                basis: "AMD driver and ROCm/Vulkan context (assumed as NVIDIA's 800 MiB)".into(),
+            },
             Vendor::Apple => Headroom {
                 bytes: HEADROOM_APPLE,
                 basis: "macOS and display on unified memory (default 1536 MiB)".into(),

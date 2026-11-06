@@ -1,5 +1,5 @@
 //! Pretend hardware for `--pretend`: plan against a GPU you do not have, by catalog name
-//! (`rtx 4090`, `m4 max 128gb`) or raw size (`24GB`, `48GB-unified`), with an optional host
+//! (`rtx 4090`, `r9700`, `m4 max 128gb`, `ryzen ai max 128gb`) or raw size (`24GB`, `48GB-unified`), with an optional host
 //! RAM suffix (`rtx 3090+128GB`). Figures are assumptions, labelled as such in every basis.
 
 use crate::{GIB, Gpu, Host, HwSnapshot, MIB, MemoryKind, Vendor, system};
@@ -8,14 +8,16 @@ use crate::{GIB, Gpu, Host, HwSnapshot, MIB, MemoryKind, Vendor, system};
 const DRIVER_RESERVE: u64 = 500 * MIB;
 /// Host RAM assumed next to a dedicated card when no `+<size>` is given.
 const DEFAULT_HOST: u64 = 32 * GIB;
-/// RAM a freshly booted macOS holds.
+/// RAM a freshly booted macOS holds; also assumed for Linux on an APU.
 const MACOS_HOLDS: u64 = 4 * GIB;
 
 /// A dedicated card: marketing name, VRAM as `nvidia-smi` reports it, peak memory bandwidth
 /// from the spec sheet (sources in `docs/decisions/0009-speed-estimates.md`), and the
-/// spellings that select it (normalised: lowercase, no spaces, dashes, `nvidia` or `geforce`).
+/// spellings that select it (normalised: lowercase, no spaces, dashes, `nvidia`, `geforce`,
+/// `amd` or `radeon`).
 pub struct Card {
     pub name: &'static str,
+    pub vendor: Vendor,
     pub vram_mib: u64,
     /// GB/s (10^9 bytes per second), as vendors state it.
     pub bandwidth_gbs: f64,
@@ -46,6 +48,12 @@ pub static CARDS: &[Card] = &[
     card("NVIDIA A100 80GB SXM", 81920, 2039.0, &["a10080gb", "a100sxm80gb", "a100sxm480gb"]),
     card("NVIDIA H100 80GB PCIe", 81559, 2000.0, &["h100pcie", "h100pcie80gb"]),
     card("NVIDIA H100 80GB SXM", 81559, 3350.0, &["h100", "h10080gb", "h100sxm", "h100sxm5", "h100hbm3"]),
+    amd("AMD Radeon RX 7900 XT", 20480, 800.0, &["rx7900xt", "7900xt"]),
+    amd("AMD Radeon RX 7900 XTX", 24576, 960.0, &["rx7900xtx", "7900xtx"]),
+    amd("AMD Radeon RX 9070", 16384, 640.0, &["rx9070", "9070"]),
+    amd("AMD Radeon RX 9070 XT", 16384, 640.0, &["rx9070xt", "9070xt"]),
+    amd("AMD Radeon PRO W7900", 49152, 864.0, &["prow7900", "w7900"]),
+    amd("AMD Radeon AI PRO R9700", 32768, 640.0, &["aipror9700", "r9700", "pror9700"]),
 ];
 
 const fn card(
@@ -56,11 +64,42 @@ const fn card(
 ) -> Card {
     Card {
         name,
+        vendor: Vendor::Nvidia,
         vram_mib,
         bandwidth_gbs,
         aliases,
     }
 }
+
+const fn amd(
+    name: &'static str,
+    vram_mib: u64,
+    bandwidth_gbs: f64,
+    aliases: &'static [&'static str],
+) -> Card {
+    Card {
+        vendor: Vendor::Amd,
+        ..card(name, vram_mib, bandwidth_gbs, aliases)
+    }
+}
+
+/// A non-Apple APU with unified memory; the RAM is given with `--pretend`
+/// (`ryzen ai max 128gb`) and the GPU's share follows [`system::apu_gpu_share`].
+pub struct Apu {
+    keys: &'static [&'static str],
+    pub name: &'static str,
+    /// GB/s, as the vendor states it.
+    pub bandwidth_gbs: f64,
+}
+
+#[rustfmt::skip]
+pub static APUS: &[Apu] = &[
+    Apu {
+        keys: &["ryzenaimax395", "ryzenaimaxpro395", "ryzenaimax", "strixhalo"],
+        name: "AMD Ryzen AI Max+ 395",
+        bandwidth_gbs: 256.0,
+    },
+];
 
 /// An Apple Silicon chip; the RAM tier is always given with `--pretend` (`m4 pro 48gb`).
 pub struct Chip {
@@ -88,6 +127,10 @@ pub static CHIPS: &[Chip] = &[
     chip("m4", "Apple M4", 120.0, ""),
     chip("m4pro", "Apple M4 Pro", 273.0, ""),
     chip("m4max", "Apple M4 Max", 410.0, "410 GB/s with the 32-core GPU, 546 with the 40-core; the lower is assumed"),
+    chip("m5", "Apple M5", 153.0, ""),
+    chip("m5pro", "Apple M5 Pro", 307.0, ""),
+    chip("m5max", "Apple M5 Max", 460.0, "460 GB/s with the 32-core GPU, 614 with the 40-core; the lower is assumed"),
+    chip("m5ultra", "Apple M5 Ultra", 1200.0, ""),
 ];
 
 const fn chip(
@@ -118,6 +161,13 @@ pub fn bandwidth_for(name: &str) -> Option<(u64, String)> {
     CHIPS.iter().find(|c| c.key == s).map(chip_bandwidth)
 }
 
+fn apu_bandwidth(a: &Apu) -> (u64, String) {
+    (
+        gbs_to_bytes(a.bandwidth_gbs),
+        format!("{} GB/s, AMD spec (256-bit LPDDR5x-8000)", a.bandwidth_gbs),
+    )
+}
+
 fn card_bandwidth(c: &Card) -> (u64, String) {
     (
         gbs_to_bytes(c.bandwidth_gbs),
@@ -142,14 +192,18 @@ pub enum PretendError {
         "unknown hardware `{spec}`{hint}; `loadmaster gpu --pretend list` shows the catalog, or pass a size like `24GB` or `48GB-unified`"
     )]
     Unknown { spec: String, hint: String },
-    #[error("`{0}`: give the Mac's RAM, e.g. `{0} 16gb`")]
+    #[error("`{0}`: give the machine's RAM, e.g. `{0} 64gb`")]
     NeedsRam(String),
     #[error("`{0}`: not a size (expected e.g. `24GB`)")]
     BadSize(String),
-    #[error("a Mac has one GPU; pretend several dedicated cards instead (`2x rtx 3090`)")]
+    #[error("unified memory has one GPU; pretend several dedicated cards instead (`2x rtx 3090`)")]
     MultiUnified,
     #[error("mixing GPU vendors is not supported; llama.cpp splits across one backend")]
     MixedVendors,
+    #[error("splitting across several AMD cards is not planned yet; pretend one (`r9700`)")]
+    MultiAmd,
+    #[error("`{0}`: the GPU share is more than the RAM")]
+    ShareTooBig(String),
 }
 
 fn normalise(s: &str) -> String {
@@ -157,6 +211,8 @@ fn normalise(s: &str) -> String {
         .replace("nvidia", "")
         .replace("geforce", "")
         .replace("apple", "")
+        .replace("amd", "")
+        .replace("radeon", "")
         .chars()
         .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
         .collect()
@@ -176,14 +232,20 @@ fn size(s: &str) -> Option<u64> {
 /// Bandwidth and its basis, for the pretend builders.
 type Bandwidth = Option<(u64, String)>;
 
-fn dedicated(name: String, total: u64, host: Option<u64>, bw: Bandwidth) -> HwSnapshot {
+fn dedicated(
+    name: String,
+    vendor: Vendor,
+    total: u64,
+    host: Option<u64>,
+    bw: Bandwidth,
+) -> HwSnapshot {
     let (bandwidth_bytes_s, bandwidth_basis) = split_bw(bw);
     let host_total = host.unwrap_or(DEFAULT_HOST);
     HwSnapshot {
         gpus: vec![Gpu {
             index: 0,
             name: format!("{name} (pretend)"),
-            vendor: Vendor::Nvidia,
+            vendor,
             memory: MemoryKind::Dedicated,
             total_bytes: total,
             usable_bytes: total.saturating_sub(DRIVER_RESERVE),
@@ -238,9 +300,37 @@ fn unified(name: String, total: u64, bw: Bandwidth) -> HwSnapshot {
     }
 }
 
+fn apu(name: String, total: u64, share: Option<u64>, bw: Bandwidth) -> HwSnapshot {
+    let (usable, basis) = system::apu_gpu_share(total, share);
+    let (bandwidth_bytes_s, bandwidth_basis) = split_bw(bw);
+    HwSnapshot {
+        gpus: vec![Gpu {
+            index: 0,
+            name: format!("{name} (pretend)"),
+            vendor: Vendor::Amd,
+            memory: MemoryKind::Unified,
+            total_bytes: total,
+            usable_bytes: usable,
+            usable_basis: format!("pretend: {basis}"),
+            bandwidth_bytes_s,
+            bandwidth_basis,
+        }],
+        host: Host {
+            total_bytes: total,
+            available_bytes: (total - usable).saturating_sub(MACOS_HOLDS),
+            available_basis: "pretend: RAM outside the GPU share, less 4 GiB for the OS".into(),
+        },
+    }
+}
+
 /// The hardware a `--pretend` spec describes: one or more GPUs joined by `+` (`2x rtx 3090`,
 /// `rtx 4090 + rtx 3060`), and optionally host RAM as a bare size after a `+`.
 pub fn pretend(spec: &str) -> Result<HwSnapshot, PretendError> {
+    // `Ryzen AI Max+ 395`: that `+` is part of the name, not a host RAM suffix.
+    let spec = &spec
+        .replace("max+", "max ")
+        .replace("Max+", "Max ")
+        .replace("MAX+", "MAX ");
     let mut host = None;
     let mut gpus: Vec<&str> = Vec::new();
     for (i, part) in spec.split('+').map(str::trim).enumerate() {
@@ -274,6 +364,9 @@ pub fn pretend(spec: &str) -> Result<HwSnapshot, PretendError> {
         if out.gpus.iter().any(|g| g.vendor != out.gpus[0].vendor) {
             return Err(PretendError::MixedVendors);
         }
+        if out.gpus[0].vendor == Vendor::Amd {
+            return Err(PretendError::MultiAmd);
+        }
         for (i, g) in out.gpus.iter_mut().enumerate() {
             g.index = i as u32;
         }
@@ -306,6 +399,7 @@ fn one(gpu: &str, host: Option<u64>) -> Result<HwSnapshot, PretendError> {
     if let Some(c) = CARDS.iter().find(|c| c.aliases.contains(&s.as_str())) {
         return Ok(dedicated(
             c.name.into(),
+            c.vendor,
             c.vram_mib * MIB,
             host,
             Some(card_bandwidth(c)),
@@ -340,6 +434,7 @@ fn one(gpu: &str, host: Option<u64>) -> Result<HwSnapshot, PretendError> {
     if let Some(total) = size(raw) {
         return Ok(dedicated(
             format!("{} GPU", crate::gib_str(total)),
+            Vendor::Nvidia,
             total,
             host,
             bw,
@@ -361,6 +456,34 @@ fn one(gpu: &str, host: Option<u64>) -> Result<HwSnapshot, PretendError> {
                     Some(chip_bandwidth(c)),
                 ));
             }
+        }
+    }
+
+    // APU: name then RAM, optionally the GPU share: `ryzenaimax128gb`, `ryzenaimax128gbgpu110gb`.
+    for a in APUS {
+        let mut keys = a.keys.to_vec();
+        keys.sort_by_key(|k| std::cmp::Reverse(k.len()));
+        if let Some(rest) = keys.iter().find_map(|k| s.strip_prefix(k)) {
+            if rest.is_empty() {
+                return Err(PretendError::NeedsRam(gpu.trim().into()));
+            }
+            let (ram, share) = match rest.split_once("gpu") {
+                Some((r, g)) => (
+                    r,
+                    Some(size(g).ok_or_else(|| PretendError::BadSize(gpu.trim().into()))?),
+                ),
+                None => (rest, None),
+            };
+            let total = size(ram).ok_or_else(|| PretendError::BadSize(gpu.trim().into()))?;
+            if share.is_some_and(|g| g > total) {
+                return Err(PretendError::ShareTooBig(gpu.trim().into()));
+            }
+            return Ok(apu(
+                format!("{} {}", a.name, crate::gib_str(total)),
+                total,
+                share,
+                Some(apu_bandwidth(a)),
+            ));
         }
     }
 
@@ -432,6 +555,67 @@ mod tests {
         assert_eq!(
             pretend("m4 max"),
             Err(PretendError::NeedsRam("m4 max".into()))
+        );
+    }
+
+    #[test]
+    fn m5_family() {
+        let snap = pretend("m5 pro 24gb").unwrap();
+        assert_eq!(snap.gpus[0].name, "Apple M5 Pro 24 GiB (pretend)");
+        assert_eq!(snap.gpus[0].bandwidth_bytes_s, Some(307_000_000_000));
+        assert_eq!(gpu("m5 16gb").bandwidth_bytes_s, Some(153_000_000_000));
+        let max = gpu("m5 max 128gb");
+        assert_eq!(max.bandwidth_bytes_s, Some(460_000_000_000));
+        assert!(max.bandwidth_basis.contains("lower is assumed"));
+        assert_eq!(
+            gpu("m5 ultra 512gb").bandwidth_bytes_s,
+            Some(1_200_000_000_000)
+        );
+        // Real detection on an M5 Pro reports the chip by this name.
+        assert_eq!(bandwidth_for("Apple M5 Pro").unwrap().0, 307_000_000_000);
+    }
+
+    #[test]
+    fn amd_cards() {
+        let g = gpu("r9700");
+        assert_eq!(g.name, "AMD Radeon AI PRO R9700 (pretend)");
+        assert_eq!((g.vendor, g.memory), (Vendor::Amd, MemoryKind::Dedicated));
+        assert_eq!(g.total_bytes, 32 * GIB);
+        assert_eq!(g.bandwidth_bytes_s, Some(640_000_000_000));
+        assert_eq!(gpu("AMD Radeon RX 7900 XTX").total_bytes, 24 * GIB);
+        assert_eq!(gpu("rtx 4090").vendor, Vendor::Nvidia);
+        assert_eq!(pretend("2x r9700"), Err(PretendError::MultiAmd));
+        assert_eq!(pretend("r9700 + rtx 3090"), Err(PretendError::MixedVendors));
+    }
+
+    #[test]
+    fn ryzen_ai_max_takes_a_gpu_share_not_the_metal_rule() {
+        for s in [
+            "ryzen ai max 128gb",
+            "Ryzen AI Max+ 395 128GB",
+            "strix halo 128gb",
+        ] {
+            let snap = pretend(s).unwrap();
+            let g = &snap.gpus[0];
+            assert_eq!(g.name, "AMD Ryzen AI Max+ 395 128 GiB (pretend)", "{s}");
+            assert_eq!((g.vendor, g.memory), (Vendor::Amd, MemoryKind::Unified));
+            assert_eq!(g.usable_bytes, 96 * GIB);
+            assert!(g.usable_basis.contains("Variable Graphics Memory"));
+            assert_eq!(g.bandwidth_bytes_s, Some(256_000_000_000));
+            assert_eq!(snap.host.available_bytes, 28 * GIB);
+        }
+        let g = gpu("ryzen ai max 128gb gpu 110gb");
+        assert_eq!(g.usable_bytes, 110 * GIB);
+        assert!(g.usable_basis.contains("as given"));
+        assert_eq!(
+            pretend("ryzen ai max 64gb gpu 96gb"),
+            Err(PretendError::ShareTooBig(
+                "ryzen ai max 64gb gpu 96gb".into()
+            ))
+        );
+        assert_eq!(
+            pretend("ryzen ai max"),
+            Err(PretendError::NeedsRam("ryzen ai max".into()))
         );
     }
 

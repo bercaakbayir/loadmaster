@@ -764,3 +764,32 @@ fn image_generation_repos_are_not_supported() {
         assert!(!err.contains("converter"), "{spec}: {err}");
     }
 }
+
+#[test]
+fn best_fit_skips_a_quant_that_fits_but_crawls() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    // 40 GB/s: Q8_0 fits but runs under 5 tok/s; Q4_K_M is the best fit.
+    let args = ["plan", "--pretend", "24GB-unified@40", "--ctx", "8192"];
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&args[..], &["hf://fx/qwen3-8b-GGUF"]].concat(),
+    );
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    insta::assert_snapshot!(out);
+
+    // No bandwidth, no speed: the largest that fits, as before.
+    let args = ["plan", "--pretend", "24GB-unified", "--ctx", "8192"];
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&args[..], &["hf://fx/qwen3-8b-GGUF"]].concat(),
+    );
+    let out = text(&o).0;
+    let q8 = out.lines().find(|l| l.starts_with("Q8_0")).unwrap();
+    assert!(q8.ends_with("← best fit"), "{out}");
+}

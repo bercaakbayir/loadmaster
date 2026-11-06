@@ -29,6 +29,8 @@ fn gib_str(bytes: u64) -> String {
 pub enum Vendor {
     Nvidia,
     Apple,
+    /// Radeon cards and Ryzen AI Max (llama.cpp's ROCm or Vulkan backend); `--pretend` only.
+    Amd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,7 +38,7 @@ pub enum Vendor {
 pub enum MemoryKind {
     /// Discrete VRAM.
     Dedicated,
-    /// Shared with the host (Apple Silicon).
+    /// Shared with the host (Apple Silicon, Ryzen AI Max).
     Unified,
 }
 

@@ -140,7 +140,8 @@ fn kv_reads(model: &ModelInfo, p: Placement, cfg: &Config, fill: u32) -> (u64, u
 pub fn backend(gpu: &Gpu) -> Band {
     match gpu.vendor {
         Vendor::Apple => METAL,
-        Vendor::Nvidia => CUDA,
+        // No ROCm or Vulkan points yet; the CUDA fit stands in (ADR 0009).
+        Vendor::Nvidia | Vendor::Amd => CUDA,
     }
 }
 

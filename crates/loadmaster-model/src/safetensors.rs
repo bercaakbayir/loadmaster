@@ -495,7 +495,7 @@ impl ModelInfo {
                 (0..n_layer).map(|il| p.is_recurrent(il)).collect()
             }
         };
-        // As llama.cpp's converter maps them (convert_hf_to_gguf.py, Qwen3NextModel).
+        // As llama.cpp's converter maps them (conversion/qwen.py at 6c01da6).
         let recurrent_bytes = if recurrent_layers.contains(&true) {
             let linear = |k: &str| cfg.u32(k).ok_or_else(|| missing(k));
             SsmDims {

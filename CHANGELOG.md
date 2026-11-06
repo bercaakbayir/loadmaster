@@ -109,6 +109,14 @@ All notable changes to this project are documented here. The format follows
 - `plan hf://org/repo` no longer lists `imatrix` and `MTP/mtp-*` files as quants, and reads
   `fp16` in file names.
 
+### Fixed
+- Hybrid-attention models (Qwen3.5, Qwen3.5-MoE, Qwen3-Next; archs `qwen35`, `qwen35moe`,
+  `qwen3next`) are known architectures. KV is counted only on their full-attention layers
+  (every `full_attention_interval`th), not on every layer, which overstated it about 4x. The
+  Gated DeltaNet layers' fixed f32 state is a new `recurrent state` term, counted once per
+  sequence (ADR 0016). JSON: new term keys `recurrent` and `recurrent_cpu`, and
+  hybrid models' layers carry `recurrent_bytes`.
+
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the
   `loadmaster` binary (CLI surface for `scan`, `gpu`, `plan`; not yet functional).

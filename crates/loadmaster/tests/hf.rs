@@ -147,13 +147,14 @@ fn hub() -> Hub {
             },
         )],
     );
-    // An architecture loadmaster's table does not know, as when Qwen3.5 first shipped.
+    // An architecture loadmaster's table does not know, as when Qwen3.5 first shipped (qwen35 is
+    // known now, so a made-up name stands in).
     let mut w = GgufWriter::new();
-    w.kv("general.architecture", Value::String("qwen35".into()));
-    w.kv("qwen35.block_count", Value::U32(2));
-    w.kv("qwen35.context_length", Value::U32(4096));
-    w.kv("qwen35.embedding_length", Value::U32(256));
-    w.kv("qwen35.attention.head_count", Value::U32(4));
+    w.kv("general.architecture", Value::String("qwen9".into()));
+    w.kv("qwen9.block_count", Value::U32(2));
+    w.kv("qwen9.context_length", Value::U32(4096));
+    w.kv("qwen9.embedding_length", Value::U32(256));
+    w.kv("qwen9.attention.head_count", Value::U32(4));
     for (name, dims) in [
         ("token_embd.weight", [256u64, 1000]),
         ("blk.0.attn_q.weight", [256, 256]),
@@ -165,11 +166,11 @@ fn hub() -> Hub {
     let bytes = w.finish_with_data();
     let size = bytes.len() as u64;
     repos.insert(
-        "fx/qwen35-GGUF".into(),
+        "fx/qwen9-GGUF".into(),
         vec![
-            ("Qwen3.5-Q4_K_M.gguf".into(), File { bytes, size }),
+            ("Qwen9-Q4_K_M.gguf".into(), File { bytes, size }),
             (
-                "Qwen3.5-Q8_0.gguf".into(),
+                "Qwen9-Q8_0.gguf".into(),
                 File {
                     bytes: Vec::new(),
                     size: size * 17 / 10,
@@ -706,12 +707,12 @@ fn the_quant_table_shows_the_header_quants_warnings() {
         &url,
         home.path(),
         None,
-        &[&PLAN[..], &["hf://fx/qwen35-GGUF"]].concat(),
+        &[&PLAN[..], &["hf://fx/qwen9-GGUF"]].concat(),
     );
     let (out, err) = text(&o);
     assert_eq!(o.status.code(), Some(0), "{out}{err}");
     assert_eq!(
-        out.matches("! architecture `qwen35` unknown").count(),
+        out.matches("! architecture `qwen9` unknown").count(),
         1,
         "once, below the legend: {out}"
     );
@@ -722,7 +723,7 @@ fn the_quant_table_shows_the_header_quants_warnings() {
         &url,
         home.path(),
         None,
-        &[&PLAN[..], &["hf://fx/qwen35-GGUF", "--json"]].concat(),
+        &[&PLAN[..], &["hf://fx/qwen9-GGUF", "--json"]].concat(),
     );
     let v: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
     let w = v["warnings"].as_array().unwrap();
@@ -730,7 +731,7 @@ fn the_quant_table_shows_the_header_quants_warnings() {
         w.iter().any(|w| w
             .as_str()
             .unwrap()
-            .starts_with("architecture `qwen35` unknown")),
+            .starts_with("architecture `qwen9` unknown")),
         "{v}"
     );
 

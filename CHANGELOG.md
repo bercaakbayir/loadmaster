@@ -21,6 +21,10 @@ All notable changes to this project are documented here. The format follows
 - Memory bandwidth in the hardware snapshot: from the catalog (20 NVIDIA cards and 15 Apple
   chips, each figure cited in ADR 0009), else NVML's bus width and memory clock; `--pretend
   24GB@936` sets it for raw sizes. `gpu` and `gpu --pretend list` show it.
+- Catalog additions: Apple M5, M5 Pro, M5 Max and M5 Ultra; AMD Radeon cards and the Ryzen
+  AI Max+ 395, whose GPU share of unified memory follows AMD Variable Graphics Memory (3/4 of
+  RAM by default) rather than Metal's rule. AMD speed uses the CUDA fit until there are
+  ROCm/Vulkan points. Bandwidths cited in ADR 0009.
 - Speed estimates: `plan` prints generation tok/s as a band at 4k and at the planned
   context, `--explain` has a SPEED section, alternatives and the `hf://` quant table show
   tok/s. Memory-bound model fitted to 48 published llama.cpp results, all of which a test
@@ -116,7 +120,23 @@ All notable changes to this project are documented here. The format follows
   Gated DeltaNet layers' fixed f32 state is a new `recurrent state` term, counted once per
   sequence (ADR 0016). JSON: new term keys `recurrent` and `recurrent_cpu`, and
   hybrid models' layers carry `recurrent_bytes`. `report` records llama.cpp's `RS buffer`
-  as `rs` instead of adding it to `kv`, and predicts it as `gpu_recurrent_mib`.
+  as `rs` instead of adding it to `kv`, and predicts it as `gpu_recurrent_mib`. A measured
+  Qwen3.5-0.8B run on an M5 Pro at ctx 32768 matched both the KV and RS buffers exactly
+  (`validation/observed.toml`).
+- Diffusion GGUFs (FLUX, SD3, Wan, ...), diffusers repos (`model_index.json`) and T5/BART
+  encoder-decoder configs fail with `not supported` instead of the misleading "missing
+  metadata key ... old or unsupported converter". `scan` lists them on an `unsupported:`
+  line, not `error:`.
+- `plan hf://org/repo` prints the planned quant's warnings (such as an unknown
+  architecture) once below the table's legend; `--json` carries them as `warnings`.
+- The `hf://` quant table's and `suggest`'s best fit skips quants that fit but would run
+  under 5 tok/s at 4k context (judged on the fast end of the band), so a 70B on a 192 GB Mac
+  picks Q4_K_L instead of f16 (`docs/suggest.md`).
+- `probe`: when llama-server's tool-call parser rejects the model's output (HTTP 500, or an
+  SSE error event mid-stream) the verdict is the new `runtime_parse_error`, not `no_call` or
+  `stream_truncated`.
+- `docs/fixtures.md` no longer lists the `status_class: 4` condition key as a failure class;
+  a test keeps the table in step with the built-in fixtures.
 
 ### Added
 - Cargo workspace with `loadmaster-{model,hw,plan,store,lock,serve,probe}` crates and the

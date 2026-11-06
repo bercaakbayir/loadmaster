@@ -20,7 +20,8 @@ pub fn activation_bytes(model: &ModelInfo) -> u64 {
 }
 
 /// KV bytes for one sequence of `ctx` tokens. Sliding-window layers keep at most the
-/// window (vLLM's hybrid allocator).
+/// window (vLLM's hybrid allocator); recurrent layers keep no KV but a fixed state, counted
+/// at f32 (an upper bound for vLLM, unvalidated).
 pub fn kv_bytes(model: &ModelInfo, ctx: u32, kv: KvType) -> u64 {
     let ctx = u64::from(ctx.next_multiple_of(BLOCK));
     let elem = match kv {
@@ -35,7 +36,7 @@ pub fn kv_bytes(model: &ModelInfo, ctx: u32, kv: KvType) -> u64 {
                 (true, Some(w)) => ctx.min(u64::from(w)),
                 _ => ctx,
             };
-            (u64::from(l.k_dim) + u64::from(l.v_dim)) * elem * tokens
+            (u64::from(l.k_dim) + u64::from(l.v_dim)) * elem * tokens + l.recurrent_bytes
         })
         .sum()
 }

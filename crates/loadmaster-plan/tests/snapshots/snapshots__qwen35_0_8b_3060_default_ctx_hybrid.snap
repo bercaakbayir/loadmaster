@@ -1,0 +1,31 @@
+---
+source: crates/loadmaster-plan/tests/snapshots.rs
+expression: "render(QWEN35_0_8B, FakeHw::rtx_3060_12g(), None, None)"
+---
+WEIGHT   Qwen3.5-0.8B · qwen35 · Q4_K_M · 24 layers
+  weights              0.43 GiB   24/24 layers + output head 0.13 GiB (tied: second copy of token embeddings); token embeddings 0.13 GiB stay on CPU
+  KV cache             3.00 GiB   f16: 6 of 24 layers x 262144 cells x (K 512 + V 512) x 2 B
+  recurrent state      0.02 GiB   f32 conv + recurrent state: 18 recurrent layers x 1.07 MiB x 1 sequence; fixed, does not grow with context
+  compute buffer       0.79 GiB   16 MiB + mask 2 B x n_ubatch 512 x ctx 262144 + peak of attention 12 B x n_ubatch 512 x (n_embd 1024 + q 2048 + k 512 + v 512) + 2 B x ctx 262144 x (k + v); flash attention
+  headroom             0.78 GiB   NVIDIA driver and CUDA context (default 800 MiB)
+  ------------------------------
+  GPU total            5.02 GiB   of 11.74 GiB usable on NVIDIA GeForce RTX 3060 (NVML free; 0.26 GiB held by other processes)
+  weights on CPU       0.13 GiB   token embeddings
+  compute on CPU       0.26 GiB   mask 2 B x n_ubatch 512 x ctx 262144 + 16 B x n_ubatch x n_embd 1024
+  host total           0.39 GiB   of 24.00 GiB available host memory
+
+BALANCE  all 24 layers and the output head on GPU
+  ctx 262144: not given; the training context 262144 fits on GPU with f16 KV
+  KV cache f16: f16 fits with every layer on GPU
+  flash attention on: required for a quantised V cache and smaller compute buffers
+  tried:
+    fits all layers on GPU, f16 KV                          GPU    5.02 GiB  host    0.39 GiB
+
+COMMAND
+  llama-server -m fixtures/gguf/qwen3.5-0.8b/Qwen3.5-0.8B-Q4_K_M.gguf -c 262144 -ngl 25 -fa on -np 1 --jinja
+
+Other options:
+  Q5_K_M  ~5.1 GiB  all on GPU, f16 KV  full GPU speed
+          size estimated from 5.70 bpw; plan the real file to confirm
+  Q3_K_M  ~4.9 GiB  all on GPU, f16 KV  full GPU speed
+          size estimated from 3.91 bpw; plan the real file to confirm

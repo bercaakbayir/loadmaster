@@ -117,7 +117,8 @@ pub fn weight_reads(model: &ModelInfo, p: Placement) -> (u64, u64) {
 }
 
 /// KV bytes read per token with `fill` tokens in the context, on the GPU and on the CPU
-/// (a layer's cache lives with the layer). Sliding-window layers read at most the window.
+/// (a layer's cache lives with the layer). Sliding-window layers read at most the window;
+/// recurrent layers read their fixed state instead.
 fn kv_reads(model: &ModelInfo, p: Placement, cfg: &Config, fill: u32) -> (u64, u64) {
     let (mut gpu, mut cpu) = (0, 0);
     for (il, l) in (0u32..).zip(&model.layers) {
@@ -125,7 +126,8 @@ fn kv_reads(model: &ModelInfo, p: Placement, cfg: &Config, fill: u32) -> (u64, u
             (true, Some(w)) => fill.min(w),
             _ => fill,
         };
-        let b = footprint::kv_bytes_per_cell(cfg.kv, l).unwrap_or(0) * u64::from(cells);
+        let b = footprint::kv_bytes_per_cell(cfg.kv, l).unwrap_or(0) * u64::from(cells)
+            + l.recurrent_bytes;
         if p.layer_on_gpu(il, model.n_layer) {
             gpu += b;
         } else {
@@ -267,7 +269,8 @@ pub fn estimate_split(
                 };
                 let kv = (footprint::kv_bytes_per_cell(cfg.kv, l).unwrap_or(0) * u64::from(cells))
                     as f64
-                    * if model.has_kv_cache() { 1.0 } else { 0.0 };
+                    * if model.has_kv_cache() { 1.0 } else { 0.0 }
+                    + l.recurrent_bytes as f64;
                 if p.layer_on_gpu(il, n) {
                     let d = device_of.get(slot).copied().unwrap_or(gpus.len() - 1);
                     slot += 1;

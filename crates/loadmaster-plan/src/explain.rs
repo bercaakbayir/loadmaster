@@ -98,6 +98,7 @@ fn label(key: &str) -> &'static str {
     match key {
         "weights" => "weights",
         "kv" => "KV cache",
+        "recurrent" => "recurrent state",
         "compute" => "compute buffer",
         "activation" => "activations",
         "mmproj" => "projector",
@@ -109,6 +110,7 @@ fn label(key: &str) -> &'static str {
         "headroom" => "headroom",
         "weights_cpu" => "weights on CPU",
         "kv_cpu" => "KV on CPU",
+        "recurrent_cpu" => "recurrent on CPU",
         "compute_cpu" => "compute on CPU",
         _ => "other",
     }

@@ -605,6 +605,12 @@ impl Hub {
                 reason: format!("not valid JSON: {e}"),
             })
         };
+        if !has("config.json") && has("model_index.json") {
+            // Being listed is enough; a gated repo lists files but will not serve them.
+            let index = json("model_index.json").unwrap_or_default();
+            let path = PathBuf::from(format!("hf://{repo}"));
+            return Err(loadmaster_model::diffusers_unsupported(&path, &index).into());
+        }
         let config = json("config.json")?;
         let shards: Vec<String> = if has("model.safetensors.index.json") {
             safetensors::index_shards(&json("model.safetensors.index.json")?)

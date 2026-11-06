@@ -88,8 +88,11 @@ pub fn open_target(arg: &str, offline: bool, gguf: bool) -> anyhow::Result<Targe
         ))),
         None => {
             let has_gguf = files.iter().any(|f| f.path.ends_with(".gguf"));
-            let has_st = files.iter().any(|f| f.path == "config.json")
-                && files.iter().any(|f| f.path.ends_with(".safetensors"));
+            let has = |p: &str| files.iter().any(|f| f.path == p);
+            // A diffusers repo goes to the safetensors reader, which says it is unsupported.
+            let has_st = (has("config.json")
+                && files.iter().any(|f| f.path.ends_with(".safetensors")))
+                || (!has("config.json") && has("model_index.json"));
             match (has_gguf, has_st) {
                 (true, _) if gguf || !has_st => Ok(Target::Repo { spec, files }),
                 (_, true) => Ok(Target::Model(Box::new(

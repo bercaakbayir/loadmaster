@@ -453,6 +453,13 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
         .get_str("general.architecture")
         .ok_or_else(|| missing("general.architecture".into()))?
         .to_owned();
+    if let Some(kind) = arch::non_llm_kind(&arch) {
+        return Err(Error::Unsupported {
+            path: path.to_path_buf(),
+            kind,
+            arch,
+        });
+    }
     let spec = arch::lookup(&arch);
     let key = |k: &str| format!("{arch}.{k}");
     let req = |k: &str| g.get_u32(&key(k)).ok_or_else(|| missing(key(k)));

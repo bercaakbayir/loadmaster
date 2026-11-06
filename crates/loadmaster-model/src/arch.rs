@@ -97,6 +97,54 @@ pub fn lookup(arch: &str) -> Option<&'static ArchSpec> {
     ARCHS.iter().find(|a| a.name == arch)
 }
 
+/// What a known non-LLM architecture is, for the "not supported" message: diffusion GGUFs
+/// (city96's and unsloth's `flux`, `sd3`, `wan`, ...) and HF `model_type`s of
+/// encoder-decoder and speech models. Prefixes cover versions (`flux2`, `wan2.2`).
+pub fn non_llm_kind(arch: &str) -> Option<&'static str> {
+    const KINDS: &[(&str, &str)] = &[
+        ("flux", "image generation"),
+        ("chroma", "image generation"),
+        ("sd", "image generation"),
+        ("aura", "image generation"),
+        ("hidream", "image generation"),
+        ("lumina", "image generation"),
+        ("qwen_image", "image generation"),
+        ("qwenimage", "image generation"),
+        ("pixart", "image generation"),
+        ("kolors", "image generation"),
+        ("stablediffusion", "image generation"),
+        ("wan", "video generation"),
+        ("ltx", "video generation"),
+        ("hyvid", "video generation"),
+        ("hunyuanvideo", "video generation"),
+        ("cosmos", "video generation"),
+        ("mochi", "video generation"),
+        ("cogvideo", "video generation"),
+        ("whisper", "speech-to-text"),
+        ("parakeet", "speech-to-text"),
+        ("t5", "encoder-decoder"),
+        ("mt5", "encoder-decoder"),
+        ("umt5", "encoder-decoder"),
+        ("bart", "encoder-decoder"),
+        ("mbart", "encoder-decoder"),
+        ("marian", "encoder-decoder"),
+        ("pegasus", "encoder-decoder"),
+    ];
+    let a = arch.to_ascii_lowercase();
+    // `t5encoder` is llama.cpp's embedding encoder, which loadmaster plans.
+    if lookup(&a).is_some() {
+        return None;
+    }
+    KINDS.iter().find_map(|&(prefix, kind)| {
+        let rest = a.strip_prefix(prefix)?;
+        // `sd` must not match `sdar`; versions and separators may follow.
+        let ok = rest.is_empty()
+            || rest.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+            || (prefix != "sd" && prefix.len() > 3);
+        ok.then_some(kind)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +166,19 @@ mod tests {
         let p = lookup("gpt-oss").unwrap().swa;
         assert!(p.is_swa(0));
         assert!(!p.is_swa(1));
+    }
+
+    #[test]
+    fn non_llm_kinds() {
+        assert_eq!(non_llm_kind("flux"), Some("image generation"));
+        assert_eq!(non_llm_kind("flux2"), Some("image generation"));
+        assert_eq!(non_llm_kind("sd3"), Some("image generation"));
+        assert_eq!(non_llm_kind("wan"), Some("video generation"));
+        assert_eq!(non_llm_kind("t5"), Some("encoder-decoder"));
+        assert_eq!(non_llm_kind("t5encoder"), None);
+        assert_eq!(non_llm_kind("llama"), None);
+        assert_eq!(non_llm_kind("qwen35"), None);
+        assert_eq!(non_llm_kind("sdar"), None);
     }
 
     #[test]

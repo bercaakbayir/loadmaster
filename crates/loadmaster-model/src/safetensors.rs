@@ -366,6 +366,10 @@ impl ModelInfo {
             path.parent().unwrap_or(Path::new("."))
         };
         let config_path = dir.join("config.json");
+        let model_index = dir.join("model_index.json");
+        if !config_path.exists() && model_index.exists() {
+            return Err(crate::diffusers_unsupported(dir, &read_json(&model_index)?));
+        }
         if !config_path.exists() {
             return Err(Error::NotAModel {
                 path: dir.to_path_buf(),
@@ -424,6 +428,13 @@ impl ModelInfo {
             .get("model_type")
             .and_then(Value::as_str)
             .ok_or_else(|| missing("model_type"))?;
+        if let Some(kind) = arch::non_llm_kind(model_type) {
+            return Err(Error::Unsupported {
+                path: dir,
+                kind,
+                arch: model_type.to_owned(),
+            });
+        }
         let arch = gguf_arch(model_type).to_owned();
         let spec = arch::lookup(&arch);
         let n_layer = cfg

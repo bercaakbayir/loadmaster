@@ -56,7 +56,6 @@ Paths are JSONPath over the response; prefix `N:` for step N (default: the last 
 
 | Class | Fixtures | Meaning |
 |---|---|---|
-| `4` | schema.enum_pattern, schema.strict, schema.union |  |
 | `args_invalid_json` | tool.nested, tool.parallel, tool.single | `arguments` is not valid JSON. |
 | `call_in_content` | tool.single | The tool call is written as text in `content`; `tool_calls` is empty. Usually a tool-call parser that does not match the chat template. |
 | `call_in_reasoning` | reasoning.leak, tool.single | The tool call sits in `reasoning_content` or a `<think>` block. |
@@ -80,7 +79,8 @@ Paths are JSONPath over the response; prefix `N:` for step N (default: the last 
 | `unreachable` | any | The endpoint did not answer. |
 
 Every class above is produced by the fake runtime in the probe's tests
-(`crates/loadmaster-probe/tests/conformance.rs`).
+(`crates/loadmaster-probe/tests/conformance.rs`). `tests/fixtures_doc.rs` checks this table
+against the built-in fixtures' `fail` classes: a new class needs a row here.
 
 ## Debugging a failure
 

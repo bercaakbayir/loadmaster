@@ -88,6 +88,10 @@ pub static CHIPS: &[Chip] = &[
     chip("m4", "Apple M4", 120.0, ""),
     chip("m4pro", "Apple M4 Pro", 273.0, ""),
     chip("m4max", "Apple M4 Max", 410.0, "410 GB/s with the 32-core GPU, 546 with the 40-core; the lower is assumed"),
+    chip("m5", "Apple M5", 153.0, ""),
+    chip("m5pro", "Apple M5 Pro", 307.0, ""),
+    chip("m5max", "Apple M5 Max", 460.0, "460 GB/s with the 32-core GPU, 614 with the 40-core; the lower is assumed"),
+    chip("m5ultra", "Apple M5 Ultra", 1200.0, ""),
 ];
 
 const fn chip(
@@ -433,6 +437,23 @@ mod tests {
             pretend("m4 max"),
             Err(PretendError::NeedsRam("m4 max".into()))
         );
+    }
+
+    #[test]
+    fn m5_family() {
+        let snap = pretend("m5 pro 24gb").unwrap();
+        assert_eq!(snap.gpus[0].name, "Apple M5 Pro 24 GiB (pretend)");
+        assert_eq!(snap.gpus[0].bandwidth_bytes_s, Some(307_000_000_000));
+        assert_eq!(gpu("m5 16gb").bandwidth_bytes_s, Some(153_000_000_000));
+        let max = gpu("m5 max 128gb");
+        assert_eq!(max.bandwidth_bytes_s, Some(460_000_000_000));
+        assert!(max.bandwidth_basis.contains("lower is assumed"));
+        assert_eq!(
+            gpu("m5 ultra 512gb").bandwidth_bytes_s,
+            Some(1_200_000_000_000)
+        );
+        // Real detection on an M5 Pro reports the chip by this name.
+        assert_eq!(bandwidth_for("Apple M5 Pro").unwrap().0, 307_000_000_000);
     }
 
     #[test]

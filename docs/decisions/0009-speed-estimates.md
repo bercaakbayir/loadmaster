@@ -31,6 +31,9 @@ Peak memory bandwidth, GB/s (10^9 B/s), as stated by the vendor. Fetched 2026-10
 | M3 Ultra | 819 | https://support.apple.com/en-us/122211 |
 | M4 | 120 | https://support.apple.com/en-us/121552 |
 | M4 Pro; M4 Max 32-/40-core GPU | 273; 410 / 546 | https://support.apple.com/en-us/121553 |
+| M5 | 153 | https://www.apple.com/newsroom/2025/10/apple-unleashes-m5-the-next-big-leap-in-ai-performance-for-apple-silicon/ (fetched 2026-11-06) |
+| M5 Pro; M5 Max 32-/40-core GPU | 307; 460 / 614 | https://www.apple.com/macbook-pro/specs/ (fetched 2026-11-06) |
+| M5 Ultra | 1200 (Apple: "1.2TB/s") | https://www.apple.com/mac-studio/specs/ (fetched 2026-11-06) |
 
 Chips sold with two bandwidths list the lower one and say so. Not verified, so not in the
 catalog: the RTX 4070 GDDR6 variant. A detected NVIDIA card missing from the catalog uses NVML:

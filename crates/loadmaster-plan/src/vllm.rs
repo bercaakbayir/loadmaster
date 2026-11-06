@@ -358,6 +358,7 @@ mod tests {
             k_dim: 1024,
             v_dim: 1024,
             swa,
+            recurrent_bytes: 0,
         }
     }
 

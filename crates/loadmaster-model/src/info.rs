@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::Error;
-use crate::arch::{self, KvLayout, SwaPattern};
+use crate::arch::{self, KvLayout, RecurrentPattern, SsmDims, SwaPattern};
 use crate::gguf::{GgmlType, Gguf, Value, file_type_name};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -87,6 +87,18 @@ impl ChatTemplate {
     }
 }
 
+/// What a layer keeps between tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LayerKind {
+    /// Full attention: a KV cache over the whole context.
+    Attention,
+    /// Sliding-window attention: a KV cache of at most the window.
+    Sliding,
+    /// Recurrent (linear attention): no KV cache, a fixed state per sequence.
+    Recurrent,
+}
+
 /// One repeating block (`blk.N.*`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Layer {
@@ -95,11 +107,35 @@ pub struct Layer {
     /// Bytes of routed-expert tensors (`*_exps*`), included in `bytes`. These are what
     /// llama.cpp `--n-cpu-moe` moves to the CPU.
     pub expert_bytes: u64,
-    /// KV-cache elements per token for K and V in this layer.
+    /// KV-cache elements per token for K and V in this layer; 0 for a recurrent layer.
     pub k_dim: u32,
     pub v_dim: u32,
     /// Sliding-window attention layer: its cache holds at most the window.
     pub swa: bool,
+    /// Recurrent layer: conv and recurrent state bytes for one sequence (f32, does not
+    /// grow with context). 0 for attention layers.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub recurrent_bytes: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+impl Layer {
+    pub fn kind(&self) -> LayerKind {
+        if self.recurrent_bytes > 0 {
+            LayerKind::Recurrent
+        } else if self.swa {
+            LayerKind::Sliding
+        } else {
+            LayerKind::Attention
+        }
+    }
+
+    pub fn is_recurrent(&self) -> bool {
+        self.kind() == LayerKind::Recurrent
+    }
 }
 
 /// A projector loaded alongside the model (`--mmproj`): one file holding a vision encoder,
@@ -293,6 +329,16 @@ impl ModelInfo {
         self.n_ff.max(moe)
     }
 
+    /// Layers that keep a recurrent state instead of a KV cache (hybrid models).
+    pub fn n_recurrent_layers(&self) -> usize {
+        self.layers.iter().filter(|l| l.is_recurrent()).count()
+    }
+
+    /// Recurrent state bytes of all layers for one sequence.
+    pub fn recurrent_state_bytes(&self) -> u64 {
+        self.layers.iter().map(|l| l.recurrent_bytes).sum()
+    }
+
     pub fn is_moe(&self) -> bool {
         self.n_expert.is_some_and(|n| n > 1)
     }
@@ -320,7 +366,8 @@ impl ModelInfo {
     }
 
     /// False for encoders: llama.cpp allocates no KV cache, and an input must fit one
-    /// batch (`n_ubatch >= n_tokens`).
+    /// batch (`n_ubatch >= n_tokens`). True for hybrid models: their attention layers
+    /// keep one.
     pub fn has_kv_cache(&self) -> bool {
         !matches!(self.kind, ModelKind::Embedding { encoder: true, .. })
     }
@@ -514,9 +561,48 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
     };
     let swa_window = swa_window.filter(|_| swa_layers.contains(&true));
 
+    // Hybrid models: `attention.recurrent_layers` (a flag per layer, or one for all) wins,
+    // as in llama.cpp; otherwise the architecture's pattern.
+    let recurrent_layers: Vec<bool> = match g.get(&key("attention.recurrent_layers")) {
+        Some(Value::Array(flags)) => {
+            if flags.len() != n_layer as usize {
+                return Err(Error::Inconsistent {
+                    path: path.to_path_buf(),
+                    reason: format!(
+                        "{} has {} entries for {n_layer} layers",
+                        key("attention.recurrent_layers"),
+                        flags.len()
+                    ),
+                });
+            }
+            flags.iter().map(gguf_flag).collect()
+        }
+        Some(v) if v.as_u32().is_some() || matches!(v, Value::Bool(_)) => {
+            vec![gguf_flag(v); n_layer as usize]
+        }
+        _ => {
+            let p = spec
+                .map_or(RecurrentPattern::None, |s| s.recurrent)
+                .with_interval(g.get_u32(&key("full_attention_interval")));
+            (0..n_layer).map(|il| p.is_recurrent(il)).collect()
+        }
+    };
+    let recurrent_bytes = if recurrent_layers.contains(&true) {
+        SsmDims {
+            d_conv: req("ssm.conv_kernel")?,
+            d_inner: req("ssm.inner_size")?,
+            d_state: req("ssm.state_size")?,
+            n_group: req("ssm.group_count")?,
+        }
+        .state_bytes()
+    } else {
+        0
+    };
+
     let mut layers: Vec<Layer> = (0..n_layer as usize)
         .map(|il| {
             let (k_dim, v_dim) = match mla {
+                _ if recurrent_layers[il] => (0, 0),
                 Some((rank, rope)) => (rank + rope, rank),
                 None => (
                     n_head_kv_per_layer[il] * key_len,
@@ -528,7 +614,12 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
                 expert_bytes: 0,
                 k_dim,
                 v_dim,
-                swa: swa_layers[il],
+                swa: swa_layers[il] && !recurrent_layers[il],
+                recurrent_bytes: if recurrent_layers[il] {
+                    recurrent_bytes
+                } else {
+                    0
+                },
             }
         })
         .collect();
@@ -649,6 +740,11 @@ fn build(path: &Path, parts: &[Gguf]) -> Result<ModelInfo, Error> {
         complete: parts.iter().all(|p| !p.is_truncated()),
         kind,
     })
+}
+
+/// A GGUF per-layer flag stored as a bool or an integer.
+fn gguf_flag(v: &Value) -> bool {
+    matches!(v, Value::Bool(true)) || v.as_u32().is_some_and(|n| n != 0)
 }
 
 /// A per-layer hyperparameter stored either as a scalar or as an array of `n_layer`.

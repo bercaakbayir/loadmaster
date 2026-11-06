@@ -11,10 +11,10 @@ pub mod vision;
 
 use std::path::PathBuf;
 
-pub use arch::{KvLayout, SwaPattern};
+pub use arch::{KvLayout, RecurrentPattern, SwaPattern};
 pub use info::{
-    ChatTemplate, ENCODER_ARCHS, Encoder, Format, Layer, Mmproj, ModelInfo, ModelKind, Pooling,
-    Quant, Source, mmproj_candidates, split_part_names,
+    ChatTemplate, ENCODER_ARCHS, Encoder, Format, Layer, LayerKind, Mmproj, ModelInfo, ModelKind,
+    Pooling, Quant, Source, mmproj_candidates, split_part_names,
 };
 
 #[derive(Debug, thiserror::Error)]

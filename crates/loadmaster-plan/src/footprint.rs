@@ -601,6 +601,7 @@ mod tests {
             k_dim: k,
             v_dim: v,
             swa,
+            recurrent_bytes: 0,
         }
     }
 

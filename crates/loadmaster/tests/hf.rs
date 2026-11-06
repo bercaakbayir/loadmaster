@@ -83,6 +83,28 @@ fn hub() -> Hub {
             ),
         ],
     );
+    // A hybrid-attention model (full_attention_interval and ssm.* keys): one real header, the
+    // other quants listed only and scaled from it.
+    let q35 = gguf("qwen3.5-0.8b/Qwen3.5-0.8B-Q4_K_M.gguf");
+    let size = q35.size;
+    let listed = |name: &str, tenths: u64| {
+        (
+            name.to_string(),
+            File {
+                bytes: Vec::new(),
+                size: size * tenths / 10,
+            },
+        )
+    };
+    repos.insert(
+        "fx/qwen3.5-0.8b-GGUF".into(),
+        vec![
+            ("Qwen3.5-0.8B-Q4_K_M.gguf".into(), q35),
+            listed("Qwen3.5-0.8B-Q3_K_M.gguf", 8),
+            listed("Qwen3.5-0.8B-Q8_0.gguf", 17),
+            listed("Qwen3.5-0.8B-BF16.gguf", 32),
+        ],
+    );
     repos.insert(
         "fx/gemma-3-12b-GGUF".into(),
         vec![
@@ -147,13 +169,14 @@ fn hub() -> Hub {
             },
         )],
     );
-    // An architecture loadmaster's table does not know, as when Qwen3.5 first shipped.
+    // An architecture loadmaster's table does not know, as when Qwen3.5 first shipped (qwen35 is
+    // known now, so a made-up name stands in).
     let mut w = GgufWriter::new();
-    w.kv("general.architecture", Value::String("qwen35".into()));
-    w.kv("qwen35.block_count", Value::U32(2));
-    w.kv("qwen35.context_length", Value::U32(4096));
-    w.kv("qwen35.embedding_length", Value::U32(256));
-    w.kv("qwen35.attention.head_count", Value::U32(4));
+    w.kv("general.architecture", Value::String("qwen9".into()));
+    w.kv("qwen9.block_count", Value::U32(2));
+    w.kv("qwen9.context_length", Value::U32(4096));
+    w.kv("qwen9.embedding_length", Value::U32(256));
+    w.kv("qwen9.attention.head_count", Value::U32(4));
     for (name, dims) in [
         ("token_embd.weight", [256u64, 1000]),
         ("blk.0.attn_q.weight", [256, 256]),
@@ -165,11 +188,11 @@ fn hub() -> Hub {
     let bytes = w.finish_with_data();
     let size = bytes.len() as u64;
     repos.insert(
-        "fx/qwen35-GGUF".into(),
+        "fx/qwen9-GGUF".into(),
         vec![
-            ("Qwen3.5-Q4_K_M.gguf".into(), File { bytes, size }),
+            ("Qwen9-Q4_K_M.gguf".into(), File { bytes, size }),
             (
-                "Qwen3.5-Q8_0.gguf".into(),
+                "Qwen9-Q8_0.gguf".into(),
                 File {
                     bytes: Vec::new(),
                     size: size * 17 / 10,
@@ -706,12 +729,12 @@ fn the_quant_table_shows_the_header_quants_warnings() {
         &url,
         home.path(),
         None,
-        &[&PLAN[..], &["hf://fx/qwen35-GGUF"]].concat(),
+        &[&PLAN[..], &["hf://fx/qwen9-GGUF"]].concat(),
     );
     let (out, err) = text(&o);
     assert_eq!(o.status.code(), Some(0), "{out}{err}");
     assert_eq!(
-        out.matches("! architecture `qwen35` unknown").count(),
+        out.matches("! architecture `qwen9` unknown").count(),
         1,
         "once, below the legend: {out}"
     );
@@ -722,7 +745,7 @@ fn the_quant_table_shows_the_header_quants_warnings() {
         &url,
         home.path(),
         None,
-        &[&PLAN[..], &["hf://fx/qwen35-GGUF", "--json"]].concat(),
+        &[&PLAN[..], &["hf://fx/qwen9-GGUF", "--json"]].concat(),
     );
     let v: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
     let w = v["warnings"].as_array().unwrap();
@@ -730,7 +753,7 @@ fn the_quant_table_shows_the_header_quants_warnings() {
         w.iter().any(|w| w
             .as_str()
             .unwrap()
-            .starts_with("architecture `qwen35` unknown")),
+            .starts_with("architecture `qwen9` unknown")),
         "{v}"
     );
 
@@ -792,4 +815,60 @@ fn best_fit_skips_a_quant_that_fits_but_crawls() {
     let out = text(&o).0;
     let q8 = out.lines().find(|l| l.starts_with("Q8_0")).unwrap();
     assert!(q8.ends_with("← best fit"), "{out}");
+}
+
+#[test]
+fn the_quant_table_plans_a_hybrid_model_from_its_full_attention_layers() {
+    let url = serve();
+    let home = tempfile::tempdir().unwrap();
+    // 3 GB: with KV on all 24 layers (~1.5 GiB at f16) not even Q4_K_M would keep f16 KV; with
+    // KV only on the 6 full-attention layers (384 MiB) everything up to Q8_0 does.
+    let args = ["plan", "--pretend", "3GB", "--ctx", "32768"];
+    let repo = "hf://fx/qwen3.5-0.8b-GGUF";
+    let o = run(&url, home.path(), None, &[&args[..], &[repo]].concat());
+    let (out, err) = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}{err}");
+    assert!(
+        !out.contains("unknown") && !err.contains("unknown"),
+        "{out}{err}"
+    );
+    insta::assert_snapshot!(out);
+
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&args[..], &[repo, "--json"]].concat(),
+    );
+    let v: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
+    assert_eq!(v["warnings"], serde_json::json!([]));
+    let q4 = v["quants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|q| q["quant"] == "Q4_K_M")
+        .unwrap();
+    assert_eq!(q4["kv"], "f16", "{v}");
+
+    // The table's exact row is the single-file plan: KV for 6 of 24 layers plus the
+    // recurrent state, as measured in validation/observed.toml.
+    let file = format!("{repo}/Qwen3.5-0.8B-Q4_K_M.gguf");
+    let o = run(
+        &url,
+        home.path(),
+        None,
+        &[&args[..], &[&file, "--json"]].concat(),
+    );
+    let p: serde_json::Value = serde_json::from_str(&text(&o).0).unwrap();
+    let terms = p["plan"]["footprint"]["gpu"].as_array().unwrap();
+    let term = |key: &str| {
+        terms
+            .iter()
+            .find(|t| t["key"] == key)
+            .map(|t| t["bytes"].as_u64().unwrap())
+    };
+    assert_eq!(term("kv"), Some(384 << 20), "{p}");
+    assert!(term("recurrent").unwrap() > 0, "{p}");
+    let gpu: u64 = terms.iter().map(|t| t["bytes"].as_u64().unwrap()).sum();
+    assert_eq!(q4["gpu_bytes"].as_u64(), Some(gpu), "{p}");
 }

@@ -1,0 +1,14 @@
+---
+source: crates/loadmaster/tests/hf.rs
+expression: out
+---
+Qwen3.5-0.8B  ·  4 quants  ·  3 GiB GPU (pretend), 2.5 GiB usable
+
+QUANT        SIZE  FIT      CTX  KV
+Q3_K_M    0.3 GiB  ~gpu   32768  f16
+Q4_K_M    0.4 GiB  gpu    32768  f16
+Q8_0      0.7 GiB  ~gpu   32768  f16
+BF16      1.4 GiB  ~gpu   32768  q8_0  ← best fit
+
+~ = planned from the Q4_K_M header, scaled to that file's size
+exact plan for the best fit: loadmaster plan hf://fx/qwen3.5-0.8b-GGUF/Qwen3.5-0.8B-BF16.gguf

@@ -58,8 +58,8 @@ exact plan for the best fit: loadmaster plan hf://unsloth/Qwen3-30B-A3B-GGUF/Qwe
 
 Name a file (`hf://org/repo/file.gguf`) for the exact plan; the command then uses
 `--hf-repo/--hf-file`, so llama-server downloads that same file. Safetensors repos work with
-`--runtime vllm`. `--pretend` takes a card (`rtx 3090`, `a6000`), a Mac with its RAM
-(`m4 pro 48gb`) or a size (`24GB`, `48GB-unified`); `loadmaster gpu --pretend list` shows the
+`--runtime vllm`. `--pretend` takes a card (`rtx 3090`, `a6000`, `rx 7900 xtx`), a Mac or an
+AMD APU with its RAM (`m5 pro 48gb`, `ryzen ai max 128gb`) or a size (`24GB`, `48GB-unified`); `loadmaster gpu --pretend list` shows the
 catalog; `--pretend "2x rtx 3090"` plans a split across two cards. Gated repos need
 `HF_TOKEN`; headers are cached under `~/.loadmaster/hf`.
 
@@ -76,12 +76,21 @@ best fit first ([docs/suggest.md](docs/suggest.md)):
 $ lm suggest --pretend "rtx 4090" --ctx 32768
 Models for RTX 4090 (pretend), 23.5 GiB usable  ·  llama.cpp  ·  ctx 32768  ·  trending GGUF on Hugging Face
 
-MODEL                                        PARAMS  QUANT            SIZE  FIT      CTX      TOK/S
-unsloth/Qwen3.6-35B-A3B-GGUF                  34.7B  UD-Q4_K_XL   20.8 GiB  ~gpu   32768   ~124-196
-openbmb/MiniCPM-V-4.7-35B-A3B-gguf            34.7B  Q4_1         20.3 GiB  ~gpu   32768   ~125-199
-unsloth/Qwen3.8-27B-GGUF                      27.3B  UD-Q5_K_XL   19.4 GiB  ~gpu   32768     ~33-40
+MODEL                                      PARAMS  QUANT            SIZE  FIT      CTX      TOK/S
+unsloth/flint-GGUF                          39.8B  UD-Q3_K_XL   17.2 GiB  ~gpu   32768   ~123-220
+unsloth/Qwen3.6-35B-A3B-GGUF                34.7B  UD-Q4_K_XL   20.8 GiB  ~gpu   32768   ~124-197
+unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF   30.5B  UD-Q5_K_XL   20.2 GiB  ~gpu   32768   ~106-171
+unsloth/Qwen3.8-27B-GGUF                    27.3B  UD-Q6_K      20.5 GiB  ~gpu   32768     ~33-41
 ...
-exact plan: loadmaster plan hf://unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf
+exact plan: loadmaster plan hf://unsloth/flint-GGUF/flint-UD-Q3_K_XL.gguf
+```
+
+Image generation (FLUX, SD3, Wan), speech-to-text and encoder-decoder models are not planned,
+and loadmaster says so instead of guessing ([docs/known-issues.md](docs/known-issues.md)):
+
+```console
+$ lm plan hf://city96/FLUX.2-dev-gguf --pretend "rtx 4090"
+error: hf://city96/FLUX.2-dev-gguf/flux2-dev-Q4_K_M.gguf: image generation model (flux): not supported, see docs/known-issues.md
 ```
 
 `lm suggest qwen`, `--kind vision|audio|embed`, `--runtime vllm` and `--sort downloads` narrow it.

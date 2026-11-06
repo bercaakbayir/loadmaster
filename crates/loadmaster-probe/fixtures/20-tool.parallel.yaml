@@ -25,6 +25,11 @@ pass:
     - { path: "$.choices[0].message.tool_calls", count: 3 }
     - { path: "$.choices[0].message.tool_calls[*].function.arguments", json: true }
 fail:
+  - class: runtime_parse_error
+    if:
+      all:
+        - { status_class: 5 }
+        - { path: "$.error.message", contains_any: ["format", "parse", "parsing"] }
   - class: parallel_in_content
     if:
       all:

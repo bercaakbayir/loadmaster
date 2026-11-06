@@ -26,6 +26,11 @@ pass:
     - { path: "1:$.choices[0].message.tool_calls", count: 0 }
     - { path: "1:$.choices[0].message.content", contains_any: ["18", "rain"] }
 fail:
+  - class: runtime_parse_error
+    if:
+      all:
+        - { status_class: 5 }
+        - { path: "$.error.message", contains_any: ["format", "parse", "parsing"] }
   - class: no_call
     if: { not: { ran: 1 } }
   - class: loops_on_tool

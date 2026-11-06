@@ -18,6 +18,19 @@ pass:
     - same: ["0:$.choices[0].message.tool_calls[0].function.name", "1:$.choices[0].message.tool_calls[0].function.name"]
     - same: ["0:$.choices[0].message.tool_calls[0].function.arguments", "1:$.choices[0].message.tool_calls[0].function.arguments"]
 fail:
+  - class: runtime_parse_error
+    if:
+      any:
+        - all:
+            - { status_class: 5, exchange: 0 }
+            - { path: "0:$.error.message", contains_any: ["format", "parse", "parsing"] }
+        - all:
+            - { status_class: 5, exchange: 1 }
+            - { path: "1:$.error.message", contains_any: ["format", "parse", "parsing"] }
+        # llama-server answers 200 and sends the error as an SSE event mid-stream.
+        - all:
+            - { status: 200, exchange: 1 }
+            - { path: "1:$.error.message", contains_any: ["format", "parse", "parsing"] }
   - class: stream_truncated
     if: { stream_done: false, exchange: 1 }
   - class: stream_args_split_invalid

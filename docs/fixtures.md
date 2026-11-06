@@ -68,6 +68,7 @@ Paths are JSONPath over the response; prefix `N:` for step N (default: the last 
 | `parallel_partial` | tool.parallel | Some, but not all, of the parallel calls. |
 | `parallel_serialised` | tool.parallel | Only one of several independent calls in the turn. |
 | `pattern_ignored` | schema.enum_pattern | A string that does not match the `pattern`. |
+| `runtime_parse_error` | stream.tool, tool.nested, tool.parallel, tool.result_roundtrip, tool.single | The runtime's own tool-call parser rejected what the model wrote: HTTP 5xx with a message about the format or parsing, or the same as an `error` event mid-stream (llama-server: "does not match the expected peg-native format"). Look at the runtime's tool-call parser or chat template (e.g. llama-server's `--jinja`, `--chat-template-file`), not the model. |
 | `schema_dropped_silent` | schema.enum_pattern, schema.strict | HTTP 200, but the output ignores the schema (not JSON, or invalid). |
 | `schema_flattened` | tool.nested | Nested object or array arguments arrive as strings, or otherwise fail the schema. |
 | `schema_rejected` | schema.enum_pattern, schema.strict, schema.union | `response_format` with a JSON schema is answered with a 4xx. |

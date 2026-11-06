@@ -27,6 +27,11 @@ pass:
       parse: true
       schema: { type: object, required: [location], properties: { location: { type: string } } }
 fail:
+  - class: runtime_parse_error
+    if:
+      all:
+        - { status_class: 5 }
+        - { path: "$.error.message", contains_any: ["format", "parse", "parsing"] }
   - class: call_in_reasoning
     if:
       all:

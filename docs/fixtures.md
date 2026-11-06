@@ -56,7 +56,6 @@ Paths are JSONPath over the response; prefix `N:` for step N (default: the last 
 
 | Class | Fixtures | Meaning |
 |---|---|---|
-| `4` | schema.enum_pattern, schema.strict, schema.union |  |
 | `args_invalid_json` | tool.nested, tool.parallel, tool.single | `arguments` is not valid JSON. |
 | `call_in_content` | tool.single | The tool call is written as text in `content`; `tool_calls` is empty. Usually a tool-call parser that does not match the chat template. |
 | `call_in_reasoning` | reasoning.leak, tool.single | The tool call sits in `reasoning_content` or a `<think>` block. |
@@ -68,6 +67,7 @@ Paths are JSONPath over the response; prefix `N:` for step N (default: the last 
 | `parallel_partial` | tool.parallel | Some, but not all, of the parallel calls. |
 | `parallel_serialised` | tool.parallel | Only one of several independent calls in the turn. |
 | `pattern_ignored` | schema.enum_pattern | A string that does not match the `pattern`. |
+| `runtime_parse_error` | stream.tool, tool.nested, tool.parallel, tool.result_roundtrip, tool.single | The runtime's own tool-call parser rejected what the model wrote: HTTP 5xx with a message about the format or parsing, or the same as an `error` event mid-stream (llama-server: "does not match the expected peg-native format"). Look at the runtime's tool-call parser or chat template (e.g. llama-server's `--jinja`, `--chat-template-file`), not the model. |
 | `schema_dropped_silent` | schema.enum_pattern, schema.strict | HTTP 200, but the output ignores the schema (not JSON, or invalid). |
 | `schema_flattened` | tool.nested | Nested object or array arguments arrive as strings, or otherwise fail the schema. |
 | `schema_rejected` | schema.enum_pattern, schema.strict, schema.union | `response_format` with a JSON schema is answered with a 4xx. |
@@ -79,7 +79,8 @@ Paths are JSONPath over the response; prefix `N:` for step N (default: the last 
 | `unreachable` | any | The endpoint did not answer. |
 
 Every class above is produced by the fake runtime in the probe's tests
-(`crates/loadmaster-probe/tests/conformance.rs`).
+(`crates/loadmaster-probe/tests/conformance.rs`). `tests/fixtures_doc.rs` checks this table
+against the built-in fixtures' `fail` classes: a new class needs a row here.
 
 ## Debugging a failure
 

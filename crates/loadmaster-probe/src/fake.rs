@@ -52,6 +52,10 @@ pub enum Misbehavior {
     EmbedNondeterministic,
     /// Streamed argument fragments do not concatenate to valid JSON.
     StreamArgsSplitInvalid,
+    /// The runtime's tool-call parser rejects the model's output, as llama-server does
+    /// with "does not match the expected peg-native format": HTTP 500, or an `error`
+    /// event in the middle of a stream.
+    RuntimeParseError,
 }
 
 impl Misbehavior {
@@ -75,6 +79,7 @@ impl Misbehavior {
             "stream_args_split_invalid",
             Misbehavior::StreamArgsSplitInvalid,
         ),
+        ("runtime_parse_error", Misbehavior::RuntimeParseError),
     ];
 
     pub fn parse(name: &str) -> Option<Self> {
@@ -355,6 +360,10 @@ fn violate(v: &mut Value, schema: &Value, bad: &HashSet<Misbehavior>) {
     }
 }
 
+/// llama-server's message when its tool-call parser rejects the model's output.
+const PARSE_ERROR: &str =
+    "The model produced output that does not match the expected peg-native format";
+
 struct Call {
     name: String,
     arguments: String,
@@ -394,6 +403,9 @@ fn decide(f: &Fake, req: &Value) -> Reply {
     }
 
     if let Some(tools) = req["tools"].as_array().filter(|t| !t.is_empty()) {
+        if bad.contains(&Misbehavior::RuntimeParseError) {
+            return Reply::Error(StatusCode::INTERNAL_SERVER_ERROR, PARSE_ERROR.into());
+        }
         if bad.contains(&Misbehavior::NoCall) {
             return Reply::Text {
                 content: "I would need to look that up.".into(),
@@ -498,11 +510,24 @@ async fn chat(State(f): St, axum::Json(req): axum::Json<Value>) -> Response {
     let id = format!("chatcmpl-fake{n}");
     let stream = req["stream"].as_bool().unwrap_or(false);
     match decide(&f, &req) {
-        Reply::Error(status, msg) => (
-            status,
-            axum::Json(json!({ "error": { "message": msg, "type": "invalid_request_error" } })),
-        )
-            .into_response(),
+        // A server error after streaming began arrives as an SSE `error` event.
+        reply @ Reply::Error(status, _) if stream && status.is_server_error() => {
+            sse(&f, &id, reply)
+        }
+        Reply::Error(status, msg) => {
+            let kind = if status.is_server_error() {
+                "server_error"
+            } else {
+                "invalid_request_error"
+            };
+            (
+                status,
+                axum::Json(
+                    json!({ "error": { "code": status.as_u16(), "message": msg, "type": kind } }),
+                ),
+            )
+                .into_response()
+        }
         reply if stream => sse(&f, &id, reply),
         Reply::Text { content, reasoning } => {
             let mut msg = json!({ "role": "assistant", "content": content });
@@ -575,7 +600,12 @@ fn sse(f: &Fake, id: &str, reply: Reply) -> Response {
                 events.push(chunk(json!({}), Some("tool_calls")));
             }
         }
-        Reply::Error(..) => unreachable!("errors are not streamed"),
+        Reply::Error(status, msg) => {
+            // llama-server: the role chunk, then the error, then nothing (no `[DONE]`).
+            let e = json!({ "error": { "code": status.as_u16(), "message": msg, "type": "server_error" } });
+            events.push(format!("data: {e}\n\n"));
+            truncated = true;
+        }
     }
     if !truncated {
         events.push("data: [DONE]\n\n".into());

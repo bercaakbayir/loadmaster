@@ -38,6 +38,11 @@ pass:
         items: { type: object, required: [name, email], properties: { name: { type: string }, email: { type: string } } }
       location: { type: object, required: [city, room], properties: { city: { type: string }, room: { type: string } } }
 fail:
+  - class: runtime_parse_error
+    if:
+      all:
+        - { status_class: 5 }
+        - { path: "$.error.message", contains_any: ["format", "parse", "parsing"] }
   - class: args_invalid_json
     if: { path: "$.choices[0].message.tool_calls[0].function.arguments", json: false }
   - class: schema_flattened

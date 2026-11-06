@@ -155,6 +155,8 @@ impl Client {
 
 /// Fold SSE chunks into one non-streamed completion: content and reasoning concatenated,
 /// tool calls merged by `index` (id and name from the first delta, arguments appended).
+/// An `error` event (llama-server sends one when its parser rejects the output mid-stream)
+/// is kept as the response's top-level `error`, as in a non-streamed error body.
 pub fn reassemble(raw: &[u8]) -> (Value, StreamInfo) {
     let text = String::from_utf8_lossy(raw);
     let mut info = StreamInfo::default();
@@ -164,6 +166,7 @@ pub fn reassemble(raw: &[u8]) -> (Value, StreamInfo) {
     let mut finish = Value::Null;
     let mut usage = Value::Null;
     let mut model = Value::Null;
+    let mut error = Value::Null;
     for line in text.lines() {
         let Some(data) = line.strip_prefix("data:").map(str::trim) else {
             continue;
@@ -177,6 +180,9 @@ pub fn reassemble(raw: &[u8]) -> (Value, StreamInfo) {
             continue;
         };
         info.chunks += 1;
+        if !chunk["error"].is_null() {
+            error = chunk["error"].clone();
+        }
         if model.is_null() {
             model = chunk["model"].clone();
         }
@@ -224,10 +230,11 @@ pub fn reassemble(raw: &[u8]) -> (Value, StreamInfo) {
     if !calls.is_empty() {
         message["tool_calls"] = Value::Array(calls);
     }
-    (
-        json!({ "object": "chat.completion", "model": model, "choices": [{ "index": 0, "message": message, "finish_reason": finish }], "usage": usage }),
-        info,
-    )
+    let mut response = json!({ "object": "chat.completion", "model": model, "choices": [{ "index": 0, "message": message, "finish_reason": finish }], "usage": usage });
+    if !error.is_null() {
+        response["error"] = error;
+    }
+    (response, info)
 }
 
 #[cfg(test)]
@@ -251,5 +258,24 @@ mod tests {
         assert_eq!(call["id"], "c0");
         assert_eq!(call["function"]["arguments"], "{\"a\":1}");
         assert_eq!(r["choices"][0]["finish_reason"], "tool_calls");
+        assert!(r.get("error").is_none());
+    }
+
+    #[test]
+    fn keeps_a_streamed_error_event() {
+        // Captured from llama-server b11669 serving llama3.2:1b.
+        let raw = concat!(
+            "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"object\":\"chat.completion.chunk\"}\n\n",
+            "data: {\"error\":{\"code\":500,\"message\":\"The model produced output that does not match the expected peg-native format\",\"type\":\"server_error\"}}\n\n",
+        );
+        let (r, info) = reassemble(raw.as_bytes());
+        assert!(!info.done);
+        assert_eq!(r["error"]["code"], 500);
+        assert!(
+            r["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("peg-native format")
+        );
     }
 }

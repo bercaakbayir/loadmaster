@@ -117,6 +117,15 @@ async fn each_misbehaviour_is_classified() {
             "stream.tool",
             "stream_args_split_invalid",
         ),
+        (RuntimeParseError, "tool.single", "runtime_parse_error"),
+        (RuntimeParseError, "tool.parallel", "runtime_parse_error"),
+        (RuntimeParseError, "tool.nested", "runtime_parse_error"),
+        (
+            RuntimeParseError,
+            "tool.result_roundtrip",
+            "runtime_parse_error",
+        ),
+        (RuntimeParseError, "stream.tool", "runtime_parse_error"),
     ];
     for (m, fixture, class) in cases {
         let r = probe(&[*m]).await;
@@ -126,6 +135,71 @@ async fn each_misbehaviour_is_classified() {
             "{m:?} on {fixture}"
         );
     }
+}
+
+/// llama-server answers a streamed request with 200, then an SSE `error` event: the
+/// stream.tool rule must catch that even when the non-streamed step succeeded.
+#[tokio::test]
+async fn a_parser_error_mid_stream_is_classified() {
+    let good = Client::new(
+        &start(&[], Impersonate::LlamaCpp).await,
+        Duration::from_secs(10),
+        None,
+    );
+    let bad = Client::new(
+        &start(&[Misbehavior::RuntimeParseError], Impersonate::LlamaCpp).await,
+        Duration::from_secs(10),
+        None,
+    );
+    let f = fixture::builtin()
+        .into_iter()
+        .find(|f| f.id == "stream.tool")
+        .unwrap();
+    let body = |stream: bool, b: &serde_json::Value| {
+        let mut b = b.clone();
+        b["model"] = "fake-model".into();
+        b["stream"] = stream.into();
+        b
+    };
+    let x0 = good.chat(body(false, &f.steps[0].body)).await;
+    let x1 = bad.chat(body(true, &f.steps[1].body)).await;
+    assert_eq!((x0.status, x1.status), (200, 200));
+    assert!(!x1.stream.as_ref().unwrap().done);
+    assert_eq!(x1.response["error"]["code"], 500);
+    let xs = [x0, x1];
+    let class = f
+        .fail
+        .iter()
+        .find(|r| loadmaster_probe::check::eval(&r.when, &xs))
+        .map(|r| r.class.as_str());
+    assert_eq!(class, Some("runtime_parse_error"));
+}
+
+/// A non-streamed 500 for an unrelated reason stays out of runtime_parse_error.
+#[tokio::test]
+async fn only_parser_messages_are_parse_errors() {
+    let f = fixture::builtin()
+        .into_iter()
+        .find(|f| f.id == "tool.single")
+        .unwrap();
+    let x = |status: u16, msg: &str| loadmaster_probe::client::Exchange {
+        request: serde_json::Value::Null,
+        status,
+        raw: Vec::new(),
+        response: serde_json::json!({ "error": { "code": status, "message": msg } }),
+        stream: None,
+        latency_ms: 0,
+        ttft_ms: None,
+    };
+    let rule = f
+        .fail
+        .iter()
+        .find(|r| r.class == "runtime_parse_error")
+        .unwrap();
+    let eval = |x| loadmaster_probe::check::eval(&rule.when, &[x]);
+    assert!(eval(x(500, "Failed to parse tool call arguments as JSON")));
+    assert!(!eval(x(500, "out of memory")));
+    assert!(!eval(x(400, "unsupported response format")));
 }
 
 #[tokio::test]
